@@ -7,6 +7,10 @@ async function api(path, opts = {}) {
 		headers: { "Content-Type": "application/json" },
 		...opts,
 	})
+	if (resp.status === 401) {
+		window.location.replace("/login")
+		throw new Error("Unauthenticated")
+	}
 	const text = await resp.text()
 	let data
 	try { data = JSON.parse(text) } catch { data = { error: text } }
@@ -172,11 +176,11 @@ function renderSessionItem(s) {
 	const actions = document.createElement("div")
 	actions.className = "actions"
 
-	const logBtn = document.createElement("i")
-	logBtn.innerText = "terminal"
-	logBtn.title = "View output"
-	logBtn.onclick = () => openLog(s.id)
-	actions.appendChild(logBtn)
+	const termBtn = document.createElement("i")
+	termBtn.innerText = "terminal"
+	termBtn.title = s.running ? "Open terminal" : "View transcript"
+	termBtn.onclick = () => openTerminal(s.id)
+	actions.appendChild(termBtn)
 
 	if (s.running) {
 		const stopBtn = document.createElement("i")
@@ -231,40 +235,97 @@ async function refreshSessionsBadge() {
 	catch { /* ignore */ }
 }
 
-// ---- Log modal ----
+// ---- Terminal modal (xterm.js + WebSocket) ----
 
-let logPollTimer = null
-let currentLogId = null
+let term = null
+let fitAddon = null
+let termWs = null
+let termResizeObs = null
+let currentTermId = null
 
-async function openLog(id) {
-	currentLogId = id
-	get("log-title").innerText = "Session " + id.slice(0, 8)
-	get("log-body").innerText = "Loading..."
-	get("log-modal").classList.add("show")
-	await fetchLog()
-	clearInterval(logPollTimer)
-	logPollTimer = setInterval(fetchLog, 1500)
+function ensureTerm() {
+	if (term) return term
+	const body = get("term-body")
+	body.innerHTML = ""
+	term = new Terminal({
+		cursorBlink: true,
+		fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+		fontSize: 13,
+		scrollback: 5000,
+		convertEol: true,
+		theme: {
+			background: "#0b0b0d",
+			foreground: "#e6e6e6",
+			cursor: "#c8e1ff",
+			selectionBackground: "#3a5166",
+		},
+	})
+	fitAddon = new FitAddon.FitAddon()
+	term.loadAddon(fitAddon)
+	term.open(body)
+	try { fitAddon.fit() } catch {}
+	termResizeObs = new ResizeObserver(() => {
+		try { fitAddon.fit() } catch {}
+		if (termWs && termWs.readyState === 1 && term) {
+			termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }))
+		}
+	})
+	termResizeObs.observe(body)
+	return term
 }
 
-async function fetchLog() {
-	if (!currentLogId) return
-	try {
-		const data = await api("/sessions/" + currentLogId + "/log")
-		const body = get("log-body")
-		const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 20
-		body.innerText = data.output || "(no output yet)"
-		if (atBottom) body.scrollTop = body.scrollHeight
+async function openTerminal(id) {
+	currentTermId = id
+	get("term-title").innerText = "Session " + id.slice(0, 8)
+	setTermStatus("connecting", "")
+	get("term-modal").classList.add("show")
+
+	ensureTerm()
+	term.reset()
+	try { fitAddon.fit() } catch {}
+
+	const scheme = location.protocol === "https:" ? "wss" : "ws"
+	const url = `${scheme}://${location.host}/api/sessions/${id}/ws`
+	termWs = new WebSocket(url)
+	termWs.binaryType = "arraybuffer"
+	termWs.onopen = () => {
+		setTermStatus("running", "connected")
+		if (term) termWs.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }))
 	}
-	catch (e) {
-		get("log-body").innerText = "Error: " + e.message
+	termWs.onmessage = (ev) => {
+		if (typeof ev.data === "string") {
+			try {
+				const m = JSON.parse(ev.data)
+				if (m.type === "exit") {
+					setTermStatus("stopped", `exited (${m.code})`)
+					return
+				}
+			} catch {}
+			term.write(ev.data)
+		} else {
+			term.write(new Uint8Array(ev.data))
+		}
 	}
+	termWs.onerror = () => setTermStatus("stopped", "error")
+	termWs.onclose = () => setTermStatus("stopped", "disconnected")
+	term.onData((d) => {
+		if (termWs && termWs.readyState === 1) termWs.send(d)
+	})
 }
 
-function closeLog() {
-	get("log-modal").classList.remove("show")
-	clearInterval(logPollTimer)
-	logPollTimer = null
-	currentLogId = null
+function setTermStatus(kind, text) {
+	const chip = get("term-status")
+	chip.className = "chip " + (kind || "")
+	chip.innerText = text || kind || ""
+}
+
+function closeTerminal() {
+	get("term-modal").classList.remove("show")
+	if (termWs) {
+		try { termWs.close() } catch {}
+		termWs = null
+	}
+	currentTermId = null
 }
 
 // ---- New folder ----
@@ -321,6 +382,13 @@ async function addContributor() {
 		get("contrib-user").value = ""
 	}
 	catch (e) { toast(e.message, "error") }
+}
+
+// ---- Auth ----
+
+async function logout() {
+	try { await fetch("/api/logout", { method: "POST" }) } catch {}
+	window.location.replace("/login")
 }
 
 // ---- helpers ----

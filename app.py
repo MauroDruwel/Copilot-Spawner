@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
 """Copilot Spawner server.
 
-Serves the UI and provides endpoints to:
-- Browse a workspace directory
-- Spawn `copilot --remote` and `copilot --remote --yolo` sessions
-- Manage sessions (list, view output, stop, delete)
-- Create folders
-- Clone git repositories
-- Invite contributors to a GitHub repository (needs GITHUB_TOKEN)
+A small self-hosted web app that browses a workspace, spawns `copilot
+--remote` (optionally with --yolo) agents per folder, and exposes each
+agent through a live, interactive web terminal over WebSocket.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import fcntl
+import hashlib
+import hmac
 import json
 import os
+import pty
+import secrets
 import signal
-import subprocess
+import struct
 import sys
+import termios
 import time
 import traceback
 import uuid
 from pathlib import Path
 from typing import Any
 
-from aiohttp import web, ClientSession
+from aiohttp import web, ClientSession, WSMsgType
 
+
+# ---------- configuration ----------
 
 HERE = Path(__file__).resolve().parent
 HTML_DIR = HERE / "html"
@@ -35,13 +40,93 @@ WORKSPACE.mkdir(parents=True, exist_ok=True)
 COPILOT_BIN = os.environ.get("COPILOT_BIN", "copilot")
 HOST = os.environ.get("COPILOT_SPAWNER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COPILOT_SPAWNER_PORT", "8765"))
-MAX_LOG_BYTES = int(os.environ.get("COPILOT_SPAWNER_MAX_LOG", str(256 * 1024)))
+MAX_LOG_BYTES = int(os.environ.get("COPILOT_SPAWNER_MAX_LOG", str(512 * 1024)))
+
+# Auth: if PASSWORD is set, login is required. Otherwise a fresh random one is
+# generated on startup and printed so the operator can copy it.
+_ENV_PASSWORD = os.environ.get("COPILOT_SPAWNER_PASSWORD", "").strip()
+PASSWORD = _ENV_PASSWORD or secrets.token_urlsafe(16)
+PASSWORD_AUTO = not _ENV_PASSWORD
+
+# HMAC secret for signing session cookies. If not provided, a random one is
+# generated per process (so restarts invalidate sessions).
+SECRET = os.environ.get("COPILOT_SPAWNER_SECRET") or secrets.token_hex(32)
+COOKIE_NAME = "cs_session"
+SESSION_TTL = int(os.environ.get("COPILOT_SPAWNER_SESSION_TTL", str(7 * 24 * 3600)))
+COOKIE_SECURE = os.environ.get("COPILOT_SPAWNER_COOKIE_SECURE", "auto").lower()
+
+PUBLIC_PATHS = {
+    "/login",
+    "/login.html",
+    "/api/login",
+    "/api/auth/status",
+}
+PUBLIC_PREFIXES = ("/css/", "/js/login", "/fonts/", "/img/")
+
+
+# ---------- auth helpers ----------
+
+def _sign(payload: str) -> str:
+    mac = hmac.new(SECRET.encode(), payload.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).decode().rstrip("=")
+
+
+def make_token(ttl: int = SESSION_TTL) -> str:
+    expires = int(time.time()) + ttl
+    payload = f"v1.{expires}"
+    return f"{payload}.{_sign(payload)}"
+
+
+def verify_token(token: str | None) -> bool:
+    if not token:
+        return False
+    try:
+        version, exp_s, sig = token.split(".")
+    except ValueError:
+        return False
+    if version != "v1":
+        return False
+    try:
+        expires = int(exp_s)
+    except ValueError:
+        return False
+    if expires < int(time.time()):
+        return False
+    expected = _sign(f"{version}.{exp_s}")
+    return hmac.compare_digest(sig, expected)
+
+
+def is_authenticated(request: web.Request) -> bool:
+    return verify_token(request.cookies.get(COOKIE_NAME))
+
+
+def should_secure_cookie(request: web.Request) -> bool:
+    if COOKIE_SECURE in ("1", "true", "yes", "on"):
+        return True
+    if COOKIE_SECURE in ("0", "false", "no", "off"):
+        return False
+    # auto: honor proxy header and request scheme
+    xf = request.headers.get("X-Forwarded-Proto", "").lower()
+    if xf == "https":
+        return True
+    return request.scheme == "https"
+
+
+def set_session_cookie(resp: web.Response, request: web.Request):
+    resp.set_cookie(
+        COOKIE_NAME,
+        make_token(),
+        max_age=SESSION_TTL,
+        httponly=True,
+        samesite="Lax",
+        secure=should_secure_cookie(request),
+        path="/",
+    )
 
 
 # ---------- utilities ----------
 
 def resolve_workspace_path(rel: str) -> Path:
-    """Safely resolve a path relative to the workspace root. Rejects escapes."""
     rel = (rel or "").strip()
     if rel in ("", "."):
         return WORKSPACE
@@ -77,39 +162,48 @@ async def read_json(request: web.Request) -> dict[str, Any]:
         raise web.HTTPBadRequest(reason="Invalid JSON body")
 
 
-# ---------- session manager ----------
+# ---------- session manager (PTY-based) ----------
+
+def set_winsize(fd: int, rows: int, cols: int):
+    winsize = struct.pack("HHHH", max(1, rows), max(1, cols), 0, 0)
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
+    except OSError:
+        pass
+
 
 class Session:
-    def __init__(self, path: Path, yolo: bool):
+    def __init__(self, path: Path, yolo: bool, cmd: list[str]):
         self.id = uuid.uuid4().hex
         self.path = path
         self.yolo = yolo
+        self.cmd = cmd
         self.started_at = time.time()
         self.ended_at: float | None = None
         self.exit_code: int | None = None
-        self.process: asyncio.subprocess.Process | None = None
+        self.pid: int | None = None
+        self.pty_fd: int | None = None
         self.output = bytearray()
-        self._reader_task: asyncio.Task | None = None
+        self.ws_peers: set[web.WebSocketResponse] = set()
+        self._wait_task: asyncio.Task | None = None
 
     @property
     def running(self) -> bool:
-        return self.process is not None and self.process.returncode is None
-
-    @property
-    def pid(self) -> int | None:
-        return self.process.pid if self.process else None
+        return self.pid is not None and self.exit_code is None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "path": rel_from_workspace(self.path),
             "yolo": self.yolo,
+            "cmd": self.cmd,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "exit_code": self.exit_code,
             "pid": self.pid,
             "running": self.running,
             "output_bytes": len(self.output),
+            "attached": len(self.ws_peers),
         }
 
 
@@ -126,66 +220,131 @@ class SessionManager:
             raise web.HTTPNotFound(reason="Unknown session")
         return s
 
-    async def start(self, path: Path, yolo: bool) -> Session:
+    async def start(self, path: Path, yolo: bool, rows: int = 30, cols: int = 100) -> Session:
         if not path.is_dir():
             raise web.HTTPBadRequest(reason="Path is not a directory")
         cmd = [COPILOT_BIN, "--remote"]
         if yolo:
             cmd.append("--yolo")
-        session = Session(path=path, yolo=yolo)
+        session = Session(path=path, yolo=yolo, cmd=cmd)
+
         try:
-            session.process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(path),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        except FileNotFoundError:
-            raise web.HTTPInternalServerError(
-                reason=f"'{COPILOT_BIN}' not found on PATH. Set COPILOT_BIN to override."
-            )
-        session._reader_task = asyncio.create_task(self._read_output(session))
+            pid, fd = pty.fork()
+        except OSError as e:
+            raise web.HTTPInternalServerError(reason=f"pty.fork failed: {e}")
+
+        if pid == 0:
+            # child
+            try:
+                os.chdir(str(path))
+                os.environ["TERM"] = os.environ.get("TERM", "xterm-256color")
+                os.execvp(cmd[0], cmd)
+            except FileNotFoundError:
+                os.write(2, f"'{cmd[0]}' not found on PATH. Set COPILOT_BIN to override.\n".encode())
+                os._exit(127)
+            except Exception as e:
+                os.write(2, f"exec failed: {e}\n".encode())
+                os._exit(126)
+
+        # parent
+        session.pid = pid
+        session.pty_fd = fd
+        set_winsize(fd, rows, cols)
+
+        loop = asyncio.get_running_loop()
+        loop.add_reader(fd, self._on_pty_readable, session)
+        session._wait_task = asyncio.create_task(self._wait_child(session))
+
         self.sessions[session.id] = session
         return session
 
-    async def _read_output(self, session: Session):
-        assert session.process and session.process.stdout
+    def _on_pty_readable(self, session: Session):
+        if session.pty_fd is None:
+            return
         try:
-            while True:
-                chunk = await session.process.stdout.read(4096)
-                if not chunk:
-                    break
-                session.output.extend(chunk)
-                if len(session.output) > MAX_LOG_BYTES:
-                    # keep the tail
-                    overflow = len(session.output) - MAX_LOG_BYTES
-                    del session.output[:overflow]
+            data = os.read(session.pty_fd, 4096)
+        except OSError:
+            data = b""
+        if not data:
+            loop = asyncio.get_event_loop()
+            try:
+                loop.remove_reader(session.pty_fd)
+            except (ValueError, KeyError):
+                pass
+            return
+        session.output.extend(data)
+        if len(session.output) > MAX_LOG_BYTES:
+            overflow = len(session.output) - MAX_LOG_BYTES
+            del session.output[:overflow]
+        # Broadcast to peers
+        for ws in list(session.ws_peers):
+            if ws.closed:
+                session.ws_peers.discard(ws)
+                continue
+            asyncio.create_task(self._send_safe(ws, data, session))
+
+    @staticmethod
+    async def _send_safe(ws: web.WebSocketResponse, data: bytes, session: Session):
+        try:
+            await ws.send_bytes(data)
         except Exception:
-            session.output.extend(
-                f"\n[reader error]\n{traceback.format_exc()}\n".encode()
-            )
-        finally:
-            rc = await session.process.wait()
-            session.exit_code = rc
-            session.ended_at = time.time()
+            session.ws_peers.discard(ws)
+
+    async def _wait_child(self, session: Session):
+        loop = asyncio.get_running_loop()
+        # Poll for child exit; PTY reader handles output draining.
+        while True:
+            try:
+                wpid, status = os.waitpid(session.pid, os.WNOHANG)
+            except ChildProcessError:
+                break
+            if wpid == 0:
+                await asyncio.sleep(0.4)
+                continue
+            session.exit_code = os.waitstatus_to_exitcode(status)
+            break
+        session.ended_at = time.time()
+        # Drain any trailing output
+        await asyncio.sleep(0.2)
+        if session.pty_fd is not None:
+            try:
+                loop.remove_reader(session.pty_fd)
+            except (ValueError, KeyError):
+                pass
+            try:
+                os.close(session.pty_fd)
+            except OSError:
+                pass
+            session.pty_fd = None
+        # Notify peers
+        for ws in list(session.ws_peers):
+            try:
+                await ws.send_json({"type": "exit", "code": session.exit_code})
+                await ws.close()
+            except Exception:
+                pass
+        session.ws_peers.clear()
 
     async def stop(self, sid: str) -> Session:
         session = self.get(sid)
-        if session.process and session.running:
+        if session.pid and session.running:
             try:
-                os.killpg(os.getpgid(session.process.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(session.pid), signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            try:
-                await asyncio.wait_for(session.process.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            for _ in range(20):
+                if not session.running:
+                    break
+                await asyncio.sleep(0.1)
+            if session.running:
                 try:
-                    os.killpg(os.getpgid(session.process.pid), signal.SIGKILL)
+                    os.killpg(os.getpgid(session.pid), signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-                await session.process.wait()
+                for _ in range(20):
+                    if not session.running:
+                        break
+                    await asyncio.sleep(0.1)
         return session
 
     async def delete(self, sid: str):
@@ -205,7 +364,41 @@ routes = web.RouteTableDef()
 
 @routes.get("/")
 async def index(request: web.Request):
+    if not is_authenticated(request):
+        raise web.HTTPFound("/login")
     return web.FileResponse(HTML_DIR / "index.html")
+
+
+@routes.get("/login")
+async def login_page(request: web.Request):
+    if is_authenticated(request):
+        raise web.HTTPFound("/")
+    return web.FileResponse(HTML_DIR / "login.html")
+
+
+@routes.post("/api/login")
+async def api_login(request: web.Request):
+    data = await read_json(request)
+    supplied = str(data.get("password", ""))
+    # constant-time comparison
+    if not hmac.compare_digest(supplied, PASSWORD):
+        await asyncio.sleep(0.8)  # slow brute force a bit
+        raise web.HTTPUnauthorized(reason="Invalid password")
+    resp = web.json_response({"ok": True})
+    set_session_cookie(resp, request)
+    return resp
+
+
+@routes.post("/api/logout")
+async def api_logout(request: web.Request):
+    resp = web.json_response({"ok": True})
+    resp.del_cookie(COOKIE_NAME, path="/")
+    return resp
+
+
+@routes.get("/api/auth/status")
+async def api_auth_status(request: web.Request):
+    return web.json_response({"authenticated": is_authenticated(request)})
 
 
 @routes.get("/api/list")
@@ -261,8 +454,10 @@ async def sessions_start(request: web.Request):
     data = await read_json(request)
     rel = (data.get("path") or "").strip()
     yolo = bool(data.get("yolo"))
+    cols = int(data.get("cols") or 100)
+    rows = int(data.get("rows") or 30)
     target = resolve_workspace_path(rel)
-    session = await manager.start(target, yolo)
+    session = await manager.start(target, yolo, rows=rows, cols=cols)
     return web.json_response(session.to_dict())
 
 
@@ -290,6 +485,60 @@ async def sessions_delete(request: web.Request):
     sid = request.match_info["sid"]
     await manager.delete(sid)
     return web.json_response({"ok": True})
+
+
+@routes.get("/api/sessions/{sid}/ws")
+async def sessions_ws(request: web.Request):
+    if not is_authenticated(request):
+        raise web.HTTPUnauthorized(reason="Unauthenticated")
+    sid = request.match_info["sid"]
+    session = manager.get(sid)
+    ws = web.WebSocketResponse(heartbeat=25)
+    await ws.prepare(request)
+
+    # Send backlog so the client sees history
+    if session.output:
+        try:
+            await ws.send_bytes(bytes(session.output))
+        except Exception:
+            await ws.close()
+            return ws
+
+    session.ws_peers.add(ws)
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                raw = msg.data
+                handled = False
+                if raw.startswith("{") and raw.endswith("}"):
+                    try:
+                        payload = json.loads(raw)
+                        if payload.get("type") == "resize":
+                            if session.pty_fd is not None:
+                                set_winsize(
+                                    session.pty_fd,
+                                    int(payload.get("rows", 30)),
+                                    int(payload.get("cols", 100)),
+                                )
+                            handled = True
+                    except (ValueError, TypeError):
+                        pass
+                if not handled and session.pty_fd is not None:
+                    try:
+                        os.write(session.pty_fd, raw.encode("utf-8", errors="replace"))
+                    except OSError:
+                        break
+            elif msg.type == WSMsgType.BINARY:
+                if session.pty_fd is not None:
+                    try:
+                        os.write(session.pty_fd, msg.data)
+                    except OSError:
+                        break
+            elif msg.type in (WSMsgType.CLOSE, WSMsgType.ERROR):
+                break
+    finally:
+        session.ws_peers.discard(ws)
+    return ws
 
 
 @routes.post("/api/folders")
@@ -323,7 +572,6 @@ async def clone_repo(request: web.Request):
     dir_name = (data.get("dir") or "").strip()
     if not url:
         raise web.HTTPBadRequest(reason="Missing url")
-    # derive a target dir name if not supplied
     if not dir_name:
         base = url.rstrip("/").rsplit("/", 1)[-1]
         if base.endswith(".git"):
@@ -340,8 +588,8 @@ async def clone_repo(request: web.Request):
         raise web.HTTPConflict(reason="Target already exists")
     proc = await asyncio.create_subprocess_exec(
         "git", "clone", "--", url, str(target),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
     )
     out, _ = await proc.communicate()
     if proc.returncode != 0:
@@ -387,28 +635,62 @@ async def add_contributor(request: web.Request):
 # ---------- middleware ----------
 
 @web.middleware
+async def auth_middleware(request: web.Request, handler):
+    path = request.path
+    if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
+        return await handler(request)
+    if is_authenticated(request):
+        return await handler(request)
+    if path.startswith("/api/"):
+        return web.json_response({"error": "unauthenticated"}, status=401)
+    return web.HTTPFound("/login")
+
+
+@web.middleware
 async def error_middleware(request: web.Request, handler):
     try:
         return await handler(request)
     except web.HTTPException as e:
-        if e.status >= 400:
+        if e.status >= 400 and request.path.startswith("/api/"):
             return web.json_response({"error": e.reason or str(e)}, status=e.status)
         raise
     except Exception:
         report = traceback.format_exc()
         sys.stderr.write(report)
-        return web.json_response({"error": "Internal error"}, status=500)
+        if request.path.startswith("/api/"):
+            return web.json_response({"error": "Internal error"}, status=500)
+        return web.Response(status=500, text="Internal error")
 
 
-# static assets
+# static assets (must be last so routes above win)
 routes.static("/", str(HTML_DIR))
 
 
+def _print_banner():
+    lines = [
+        "",
+        "  \033[1;36mCopilot Spawner\033[0m",
+        f"  Listening on \033[1mhttp://{HOST}:{PORT}\033[0m",
+        f"  Workspace:   {WORKSPACE}",
+    ]
+    if PASSWORD_AUTO:
+        lines += [
+            "",
+            "  \033[1;33mNo COPILOT_SPAWNER_PASSWORD was set.\033[0m",
+            "  An ephemeral password has been generated for this process:",
+            f"    \033[1;32m{PASSWORD}\033[0m",
+            "  Set COPILOT_SPAWNER_PASSWORD and COPILOT_SPAWNER_SECRET to make it persistent.",
+        ]
+    else:
+        lines.append("  Auth: password from COPILOT_SPAWNER_PASSWORD")
+    lines.append("")
+    print("\n".join(lines), flush=True)
+
+
 def main():
-    app = web.Application(middlewares=[error_middleware])
+    app = web.Application(middlewares=[error_middleware, auth_middleware])
     app.add_routes(routes)
-    print(f"Copilot Spawner listening on http://{HOST}:{PORT}")
-    print(f"Workspace: {WORKSPACE}")
+    _print_banner()
     web.run_app(app, host=HOST, port=PORT, print=None)
 
 

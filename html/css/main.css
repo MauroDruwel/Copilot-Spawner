@@ -450,6 +450,34 @@ button.primary:hover {
 	color: hsl(var(--color), 95%, 90%);
 }
 
+/* Terminal */
+.modal .term-panel {
+	max-width: 960px;
+	width: calc(100% - 24px);
+	height: 86vh;
+	max-height: 86vh;
+}
+.term-panel .panel-header i {
+	margin-right: 10px;
+	color: hsl(var(--color), 90%, 75%);
+}
+.term-body {
+	padding: 10px 12px !important;
+	background: #0b0b0d !important;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden !important;
+}
+.term-body .xterm {
+	height: 100% !important;
+}
+.term-body .xterm-viewport {
+	background: transparent !important;
+}
+.light .term-body {
+	background: #0b0b0d !important;
+}
+
 .sided {
 	display: flex;
 	align-items: center;

@@ -9,9 +9,12 @@
 	<link rel="stylesheet" type="text/css" href="css/colors.css">
 	<link rel="stylesheet" type="text/css" href="css/main.css">
 	<link rel="stylesheet" type="text/css" href="css/light.css">
-	<script type="text/javascript" src="js/utils.js"></script>
-	<script type="text/javascript" src="js/app.js"></script>
-	<script type="text/javascript" src="js/main.js"></script>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+	<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js" defer></script>
+	<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js" defer></script>
+	<script type="text/javascript" src="js/utils.js" defer></script>
+	<script type="text/javascript" src="js/app.js" defer></script>
+	<script type="text/javascript" src="js/main.js" defer></script>
 </head>
 <body>
 	<!-- Main screen -->
@@ -21,10 +24,14 @@
 			<div class="center titlebar">
 				<div class="value" id="main-subtitle">Spawn &amp; manage agent sessions</div>
 			</div>
-			<div class="center titlebar">
+			<div class="center titlebar" style="gap: 10px;">
 				<button onclick="goto('theme')">
 					<i>palette</i>
 					<p>Theme</p>
+				</button>
+				<button onclick="logout()">
+					<i>logout</i>
+					<p>Sign out</p>
 				</button>
 			</div>
 			<div class="contents">
@@ -266,14 +273,16 @@
 	<!-- Toast -->
 	<div class="toast" id="toast"></div>
 
-	<!-- Log modal -->
-	<div class="modal" id="log-modal">
-		<div class="panel">
+	<!-- Terminal modal -->
+	<div class="modal" id="term-modal">
+		<div class="panel term-panel">
 			<div class="panel-header">
-				<div class="title" id="log-title">Session log</div>
-				<i class="close" onclick="closeLog()"></i>
+				<i>terminal</i>
+				<div class="title" id="term-title">Terminal</div>
+				<div class="chip" id="term-status" style="margin-left:12px;">disconnected</div>
+				<i class="close" onclick="closeTerminal()"></i>
 			</div>
-			<div class="panel-body" id="log-body">Loading...</div>
+			<div class="panel-body term-body" id="term-body"></div>
 		</div>
 	</div>
 
