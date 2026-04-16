@@ -285,10 +285,14 @@ button.primary:hover {
 	padding: 48px 16px;
 	opacity: .5;
 }
+.list .empty i,
 .empty i {
 	font-size: 48px;
 	display: block;
-	margin-bottom: 12px;
+	margin: 0 auto 12px;
+	background: transparent;
+	color: inherit;
+	padding: 0;
 }
 
 /* Path crumbs */
