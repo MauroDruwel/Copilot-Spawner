@@ -1,0 +1,610 @@
+@import url(../fonts/MaterialSymbols/MaterialSymbols.css);
+@import url(../fonts/Quicksand/Quicksand.css);
+
+body {
+	background: hsl(var(--color), 90%, 1%);
+	color: hsl(var(--color), 95%, 93%);
+	margin: 0;
+	user-select: none;
+	font-size: 14px;
+	font-family: "Quicksand", sans-serif;
+	font-weight: bold;
+	overflow: hidden;
+	-webkit-tap-highlight-color: transparent;
+	transition: opacity .5s, background .4s;
+}
+.unloaded {
+	opacity: 0;
+	transform: scale(0.9);
+	visibility: hidden;
+}
+
+
+/* Dynamic paging */
+.screen {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	overflow-y: scroll;
+	scrollbar-width: 0;
+	transition: transform .4s, opacity .4s, visibility .4s;
+}
+.screen::-webkit-scrollbar {
+	display: none;
+}
+.screen.hidden {
+	transform: translateX(128px);
+	opacity: 0;
+	visibility: hidden;
+}
+.screen#main.hidden {
+	transform: translateX(-80px);
+}
+
+.screen .wrapper {
+	position: absolute;
+	width: calc(100% - 24px);
+	top: 0;
+	left: 50%;
+	max-width: 640px;
+	transform: translateX(-50%);
+}
+
+.header {
+	padding: 12px 4px;
+	display: flex;
+	position: sticky;
+	top: 0;
+	z-index: 1000;
+	background: hsla(var(--color), 90%, 1%, 88%);
+	backdrop-filter: blur(8px);
+	box-shadow: 0 10px 10px hsl(var(--color), 90%, 1%);
+	align-items: center;
+	transition: background .4s, color .4s, box-shadow .4s;
+}
+.header i.back {
+	padding: 10px;
+	cursor: pointer;
+	border-radius: 12px;
+	margin-right: 10px;
+	transition: background .2s;
+}
+.header i.back:hover {
+	background: #FFFFFF18;
+}
+.header i.back::after {
+	content: "arrow_back";
+	font-family: "Material Symbols Rounded";
+}
+.header .title {
+	font-size: 22px;
+}
+.header .action {
+	margin-left: auto;
+	padding: 10px;
+	cursor: pointer;
+	border-radius: 12px;
+	transition: background .2s;
+}
+.header .action:hover {
+	background: #FFFFFF18;
+}
+
+.contents {
+	padding-bottom: 48px;
+}
+
+
+/* Universal UI Stuff */
+p {
+	margin: 0;
+	display: block;
+}
+.clickable {
+	cursor: pointer;
+}
+.darken {
+	opacity: .5;
+}
+.title-main {
+	text-align: center;
+	font-size: 56px;
+	margin: 96px 0 0;
+}
+.title-main div {
+	display: inline-block;
+	color: hsl(var(--color), 95%, 88%);
+}
+#main-subtitle {
+	margin-bottom: 4px;
+	opacity: .7;
+}
+button {
+	display: flex;
+	align-items: center;
+	background: hsl(var(--color), 15%, 10%);
+	color: inherit;
+	border: none;
+	outline: none;
+	font-family: inherit;
+	font-size: inherit;
+	border-radius: 24px;
+	padding: 14px 16px;
+	font-weight: bold;
+	cursor: pointer;
+	transition: color .2s, background .2s;
+}
+button i {
+	margin-right: 8px;
+	font-size: 20px;
+}
+button:hover {
+	background: hsl(var(--color), 10%, 15%);
+}
+button.primary {
+	background: hsl(var(--color), 80%, 70%);
+	color: hsl(var(--color), 30%, 10%);
+}
+button.primary:hover {
+	background: hsl(var(--color), 80%, 78%);
+}
+
+
+/* UI Components */
+.list {
+	padding: 6px;
+	border-radius: 24px;
+	margin: 8px;
+}
+.list .item {
+	display: flex;
+	align-items: center;
+	margin-bottom: 8px;
+	border-radius: 20px;
+	padding: 16px;
+	background: hsl(var(--color), 14%, 7%);
+	transition: background .2s, color .2s;
+}
+.list .clickable:hover {
+	background: hsl(var(--color), 14%, 10%);
+}
+.list i {
+	margin-right: 16px;
+	font-size: 24px;
+	color: hsl(var(--color), 80%, 20%);
+	background: hsla(var(--color), 90%, 85%);
+	padding: 10px;
+	border-radius: 12px;
+}
+.list .name {
+	font-size: 16px;
+	margin-bottom: 1px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.list .text {
+	flex: 1;
+	min-width: 0;
+}
+.list .value {
+	opacity: .58;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.list .arrow, .list .checkbox {
+	background: hsl(var(--color), 14%, 14%);
+	color: hsl(var(--color), 90%, 90%);
+	font-size: 18px;
+	margin: 0;
+	margin-left: auto;
+	border-radius: 100px;
+	transition: background .2s;
+	flex-shrink: 0;
+}
+.list .item:hover .arrow {
+	background: hsl(var(--color), 14%, 20%);
+}
+.list .arrow::after {
+	content: "chevron_right";
+}
+.list .checkbox {
+	padding: 4px;
+	font-size: 22px;
+}
+.list .checkbox::after {
+	content: "close";
+}
+.list .checkbox.enabled {
+	color: hsl(144deg, 50%, 20%);
+	background: hsl(144deg, 50%, 80%);
+}
+.light .list .checkbox.enabled {
+	color: hsl(144deg, 50%, 10%);
+	background: hsl(144deg, 50%, 70%);
+}
+.list .checkbox.enabled::after {
+	content: "check";
+}
+
+/* Extra action icons on list items (explorer per-folder buttons) */
+.list .actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+	flex-shrink: 0;
+}
+.list .actions i {
+	margin: 0;
+	font-size: 20px;
+	padding: 10px;
+	background: hsl(var(--color), 14%, 14%);
+	color: hsl(var(--color), 90%, 88%);
+	border-radius: 100px;
+	cursor: pointer;
+	transition: background .2s, color .2s, transform .1s;
+}
+.list .actions i:hover {
+	background: hsl(var(--color), 70%, 70%);
+	color: hsl(var(--color), 20%, 12%);
+}
+.list .actions i.yolo {
+	background: hsl(24, 80%, 30%);
+	color: hsl(24, 100%, 92%);
+}
+.list .actions i.yolo:hover {
+	background: hsl(24, 85%, 55%);
+	color: hsl(24, 30%, 10%);
+}
+.list .actions i.stop {
+	background: hsl(0, 60%, 28%);
+	color: hsl(0, 100%, 92%);
+}
+.list .actions i.stop:hover {
+	background: hsl(0, 75%, 55%);
+	color: hsl(0, 30%, 10%);
+}
+.list .actions i:active {
+	transform: scale(0.92);
+}
+.list .item.status-running i.leading {
+	background: hsl(144deg, 50%, 80%);
+	color: hsl(144deg, 50%, 18%);
+}
+.list .item.status-stopped i.leading {
+	background: hsl(0, 40%, 75%);
+	color: hsl(0, 50%, 15%);
+}
+
+.empty {
+	text-align: center;
+	padding: 48px 16px;
+	opacity: .5;
+}
+.empty i {
+	font-size: 48px;
+	display: block;
+	margin-bottom: 12px;
+}
+
+/* Path crumbs */
+.crumbs {
+	margin: 8px 16px 16px;
+	padding: 10px 14px;
+	border-radius: 16px;
+	background: hsl(var(--color), 14%, 6%);
+	font-size: 13px;
+	opacity: .7;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/* Forms */
+.form {
+	margin: 8px;
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.form label {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.form label .caption {
+	opacity: .7;
+	font-size: 13px;
+	padding-left: 8px;
+}
+.form input, .form textarea, .form select {
+	background: hsl(var(--color), 14%, 7%);
+	color: inherit;
+	border: 2px solid transparent;
+	outline: none;
+	font-family: inherit;
+	font-size: 15px;
+	font-weight: bold;
+	border-radius: 16px;
+	padding: 14px 16px;
+	transition: border .2s, background .2s;
+}
+.form input:focus, .form textarea:focus, .form select:focus {
+	border-color: hsl(var(--color), 80%, 60%);
+}
+.form textarea {
+	resize: vertical;
+	min-height: 100px;
+	font-family: "Quicksand", monospace;
+}
+.form .actions {
+	display: flex;
+	gap: 10px;
+	margin-top: 8px;
+}
+.form .actions button {
+	flex: 1;
+	justify-content: center;
+}
+
+/* Toast */
+.toast {
+	position: fixed;
+	bottom: 24px;
+	left: 50%;
+	transform: translateX(-50%) translateY(120%);
+	background: hsl(var(--color), 15%, 12%);
+	color: hsl(var(--color), 95%, 93%);
+	padding: 14px 20px;
+	border-radius: 16px;
+	font-weight: bold;
+	box-shadow: 0 8px 24px #0008;
+	transition: transform .3s, opacity .3s;
+	opacity: 0;
+	z-index: 5000;
+	max-width: 80%;
+	text-align: center;
+}
+.toast.show {
+	transform: translateX(-50%) translateY(0);
+	opacity: 1;
+}
+.toast.error {
+	background: hsl(0, 60%, 30%);
+	color: hsl(0, 100%, 92%);
+}
+.toast.success {
+	background: hsl(144, 50%, 28%);
+	color: hsl(144, 50%, 92%);
+}
+
+/* Log modal */
+.modal {
+	position: fixed;
+	inset: 0;
+	background: #0009;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 4000;
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity .25s, visibility .25s;
+	backdrop-filter: blur(6px);
+}
+.modal.show {
+	opacity: 1;
+	visibility: visible;
+}
+.modal .panel {
+	width: calc(100% - 32px);
+	max-width: 720px;
+	max-height: 80vh;
+	background: hsl(var(--color), 14%, 8%);
+	border-radius: 24px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 16px 48px #000a;
+}
+.modal .panel-header {
+	display: flex;
+	align-items: center;
+	padding: 16px;
+	border-bottom: 1px solid #ffffff10;
+}
+.modal .panel-header .title {
+	font-size: 18px;
+}
+.modal .panel-header i.close {
+	margin-left: auto;
+	cursor: pointer;
+	padding: 8px;
+	border-radius: 100px;
+	transition: background .2s;
+}
+.modal .panel-header i.close:hover {
+	background: #ffffff18;
+}
+.modal .panel-header i.close::after {
+	content: "close";
+}
+.modal .panel-body {
+	padding: 16px;
+	overflow: auto;
+	font-family: "Quicksand", monospace;
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+	background: hsl(var(--color), 20%, 3%);
+	color: hsl(var(--color), 95%, 90%);
+}
+
+.sided {
+	display: flex;
+	align-items: center;
+	margin: 64px 12px;
+}
+.sided > div {
+	width: 50%;
+	text-align: center;
+}
+.sided i {
+	font-size: 32px;
+	color: #222;
+	background: hsl(var(--color), 100%, 77%);
+	margin-bottom: 10px;
+	padding: 12px;
+	border-radius: 12px;
+}
+.sided .title {
+	font-size: 18px;
+}
+.sided .value {
+	opacity: .6;
+}
+
+.center {
+	display: flex;
+	align-items: center;
+	justify-content: space-around;
+}
+.titlebar {
+	margin-bottom: 16px;
+}
+.themes {
+	margin: 12px 4px;
+	display: flex;
+	align-items: center;
+	width: 100%;
+}
+.themes .theme {
+	width: 50%;
+	cursor: pointer;
+	margin: 8px;
+	padding: 4px 14px;
+	background: #111;
+	border-radius: 30px;
+	border: 4px solid #0000;
+	transition: all .2s;
+}
+.themes .theme.selected {
+	border-color: hsl(var(--color), 90%, 75%);
+}
+.theme .preview .box {
+	background: #222;
+	border-radius: 16px;
+	margin: 12px 0;
+	padding: 12px;
+	display: flex;
+	align-items: center;
+}
+.theme .preview .box i {
+	margin-left: auto;
+	color: #BBB;
+	font-size: 18px;
+	border-radius: 48px;
+	background: #333;
+	padding: 8px 7px 7px 8px;
+}
+.theme.light {
+	background: #EEE;
+}
+.theme.light .preview .box {
+	background: #DDD;
+}
+.theme.light .preview .box i {
+	color: #222;
+	background: #BBB;
+}
+
+.accents {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	max-width: 480px;
+	padding: 12px;
+}
+.accents i {
+	height: 32px;
+	width: 32px;
+	border-radius: 48px;
+	cursor: pointer;
+	margin: 8px;
+	overflow: hidden;
+	position: relative;
+	background: hsl(var(--color), var(--saturation, 100%), 50%);
+	transition: all .2s;
+}
+.accents i::after {
+	content: "check";
+	position: absolute;
+	top: 100%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	opacity: 0;
+	transition: all .2s;
+}
+.accents .selected {
+	width: 60px;
+}
+.accents .selected::after {
+	top: 50%;
+	opacity: 1;
+	color: hsl(var(--color), 20%, 20%);
+}
+
+/* Chips row */
+.chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 6px 10px 12px;
+}
+.chip {
+	background: hsl(var(--color), 14%, 10%);
+	padding: 8px 14px;
+	border-radius: 100px;
+	font-size: 13px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.chip i {
+	font-size: 16px;
+	background: transparent !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	color: inherit !important;
+}
+.chip.running {
+	background: hsl(144, 50%, 22%);
+	color: hsl(144, 60%, 88%);
+}
+.chip.stopped {
+	background: hsl(0, 45%, 24%);
+	color: hsl(0, 60%, 88%);
+}
+.chip.yolo {
+	background: hsl(24, 60%, 24%);
+	color: hsl(24, 80%, 88%);
+}
+
+/* Icons use Material Symbols Rounded */
+i {
+	font-family: "Material Symbols Rounded";
+	font-style: normal;
+	font-weight: normal;
+	display: inline-block;
+	line-height: 1;
+	font-feature-settings: "liga";
+	-webkit-font-feature-settings: "liga";
+	-webkit-font-smoothing: antialiased;
+}

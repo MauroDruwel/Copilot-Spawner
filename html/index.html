@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Copilot Spawner</title>
+	<meta charset="utf-8">
+	<meta name="theme-color" content="#000">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+	<link href="img/icon.png" rel="icon">
+	<link rel="stylesheet" type="text/css" href="css/colors.css">
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<link rel="stylesheet" type="text/css" href="css/light.css">
+	<script type="text/javascript" src="js/utils.js"></script>
+	<script type="text/javascript" src="js/app.js"></script>
+	<script type="text/javascript" src="js/main.js"></script>
+</head>
+<body>
+	<!-- Main screen -->
+	<div class="screen unloaded" id="main">
+		<div class="wrapper">
+			<div class="title-main"><div>Copilot</div></div>
+			<div class="center titlebar">
+				<div class="value" id="main-subtitle">Spawn &amp; manage agent sessions</div>
+			</div>
+			<div class="center titlebar">
+				<button onclick="goto('theme')">
+					<i>palette</i>
+					<p>Theme</p>
+				</button>
+			</div>
+			<div class="contents">
+				<div class="list">
+					<div class="item clickable" onclick="goto('explorer')">
+						<i>folder_open</i>
+						<div class="text">
+							<div class="name">Explorer</div>
+							<div class="value">Browse folders &amp; spawn agents</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
+					<div class="item clickable" onclick="goto('sessions')">
+						<i>smart_toy</i>
+						<div class="text">
+							<div class="name">Sessions</div>
+							<div class="value" id="main-sessions">No active sessions</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
+					<div class="item clickable" onclick="goto('new-folder')">
+						<i>create_new_folder</i>
+						<div class="text">
+							<div class="name">New folder</div>
+							<div class="value">Create a folder in workspace</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
+					<div class="item clickable" onclick="goto('clone')">
+						<i>cloud_download</i>
+						<div class="text">
+							<div class="name">Clone repo</div>
+							<div class="value">Clone a git repository</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
+					<div class="item clickable" onclick="goto('contributors')">
+						<i>group_add</i>
+						<div class="text">
+							<div class="name">Contributors</div>
+							<div class="value">Add collaborators to a repo</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Explorer screen -->
+	<div class="screen hidden" id="explorer">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Explorer</div>
+				<i class="action" onclick="refreshExplorer()" title="Refresh">refresh</i>
+			</div>
+			<div class="contents">
+				<div class="crumbs" id="explorer-path">~</div>
+				<div class="list" id="explorer-list"></div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Sessions screen -->
+	<div class="screen hidden" id="sessions">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Sessions</div>
+				<i class="action" onclick="refreshSessions()" title="Refresh">refresh</i>
+			</div>
+			<div class="contents">
+				<div class="list" id="sessions-list"></div>
+			</div>
+		</div>
+	</div>
+
+	<!-- New folder screen -->
+	<div class="screen hidden" id="new-folder">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">New folder</div>
+			</div>
+			<div class="contents">
+				<div class="form">
+					<label>
+						<span class="caption">Folder name</span>
+						<input type="text" id="new-folder-name" placeholder="my-project" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Parent (relative to workspace)</span>
+						<input type="text" id="new-folder-parent" placeholder="." value="." autocomplete="off">
+					</label>
+					<div class="actions">
+						<button class="primary" onclick="createFolder()">
+							<i>check</i>
+							<p>Create</p>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Clone repo screen -->
+	<div class="screen hidden" id="clone">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Clone repo</div>
+			</div>
+			<div class="contents">
+				<div class="form">
+					<label>
+						<span class="caption">Repository URL</span>
+						<input type="text" id="clone-url" placeholder="https://github.com/owner/repo.git" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Target folder (optional)</span>
+						<input type="text" id="clone-dir" placeholder="leave empty to use repo name" autocomplete="off">
+					</label>
+					<div class="actions">
+						<button class="primary" onclick="cloneRepo()">
+							<i>cloud_download</i>
+							<p>Clone</p>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Contributors screen -->
+	<div class="screen hidden" id="contributors">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Contributors</div>
+			</div>
+			<div class="contents">
+				<div class="form">
+					<label>
+						<span class="caption">Repository (owner/repo)</span>
+						<input type="text" id="contrib-repo" placeholder="octocat/hello-world" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">GitHub username to add</span>
+						<input type="text" id="contrib-user" placeholder="username" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Permission</span>
+						<select id="contrib-perm">
+							<option value="pull">Read</option>
+							<option value="triage">Triage</option>
+							<option value="push" selected>Write</option>
+							<option value="maintain">Maintain</option>
+							<option value="admin">Admin</option>
+						</select>
+					</label>
+					<div class="actions">
+						<button class="primary" onclick="addContributor()">
+							<i>group_add</i>
+							<p>Invite</p>
+						</button>
+					</div>
+				</div>
+				<div class="chips" style="padding: 16px;">
+					<div class="chip"><i>info</i>Requires <code style="margin-left:4px">GITHUB_TOKEN</code> on the server</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Theme window -->
+	<div class="screen hidden" id="theme">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Theme</div>
+			</div>
+			<div class="contents">
+				<div class="center">
+					<div class="themes">
+						<div class="theme light" onclick="selectTheme(true)">
+							<div class="preview">
+								<div class="box">
+									<i>chevron_right</i>
+								</div>
+								<div class="box">
+									<i>chevron_right</i>
+								</div>
+							</div>
+						</div>
+						<div class="theme dark" onclick="selectTheme(false)">
+							<div class="preview">
+								<div class="box">
+									<i>chevron_right</i>
+								</div>
+								<div class="box">
+									<i>chevron_right</i>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="center">
+					<div class="accents">
+						<i class="red"></i>
+						<i class="orange"></i>
+						<i class="yellow"></i>
+						<i class="green"></i>
+						<i class="lightblue"></i>
+						<i class="blue"></i>
+						<i class="purple"></i>
+						<i class="pink"></i>
+					</div>
+				</div><br>
+
+				<div class="center">
+					<div class="list" style="width: 100%;">
+						<div class="item clickable" id="autoDarkSwitch" onclick="setAutoTheme()">
+							<i>contrast</i>
+							<div class="text">
+								<div class="name">Use platform theme</div>
+								<div class="value">App will sync its dark theme with your device's one</div>
+							</div>
+							<i class="checkbox"></i>
+						</div>
+					</div>
+				</div><br>
+
+			</div>
+		</div>
+	</div>
+
+	<!-- Toast -->
+	<div class="toast" id="toast"></div>
+
+	<!-- Log modal -->
+	<div class="modal" id="log-modal">
+		<div class="panel">
+			<div class="panel-header">
+				<div class="title" id="log-title">Session log</div>
+				<i class="close" onclick="closeLog()"></i>
+			</div>
+			<div class="panel-body" id="log-body">Loading...</div>
+		</div>
+	</div>
+
+</body>
+</html>
