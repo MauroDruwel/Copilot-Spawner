@@ -104,6 +104,7 @@ body {
 
 .contents {
 	padding-bottom: 48px;
+	padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
 }
 
 
@@ -886,4 +887,90 @@ i {
 	font-feature-settings: "liga";
 	-webkit-font-feature-settings: "liga";
 	-webkit-font-smoothing: antialiased;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 720px) {
+	.screen .wrapper {
+		width: calc(100% - 12px);
+	}
+	.header {
+		padding: 10px 2px;
+	}
+	.header .title {
+		font-size: 19px;
+	}
+	.header i.back,
+	.header .action {
+		padding: 12px;
+		border-radius: 14px;
+	}
+	.title-main {
+		font-size: 40px;
+		margin-top: 56px;
+	}
+	.center.titlebar {
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+	.center.titlebar button {
+		flex: 1 1 160px;
+		justify-content: center;
+	}
+	.list {
+		margin: 6px;
+		padding: 2px;
+	}
+	.list .item {
+		padding: 12px;
+		border-radius: 16px;
+	}
+	.list i {
+		margin-right: 10px;
+		font-size: 22px;
+		padding: 9px;
+	}
+	.list .name {
+		white-space: normal;
+	}
+	.list .value {
+		white-space: normal;
+	}
+	.search {
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 10px 12px;
+	}
+	.search input {
+		min-width: 160px;
+	}
+	.search .search-switch {
+		margin-left: auto;
+	}
+	.modal {
+		align-items: flex-end;
+	}
+	.modal .panel {
+		width: calc(100% - 8px);
+		max-width: none;
+		max-height: min(92vh, 760px);
+		border-radius: 20px 20px 14px 14px;
+	}
+	.modal .panel-header {
+		padding: 14px 12px;
+	}
+	.modal .panel-body {
+		padding: 12px;
+	}
+	.modal .term-panel {
+		width: calc(100% - 8px);
+		height: 88vh;
+		max-height: 88vh;
+	}
+	.form .actions {
+		flex-direction: column;
+	}
+	.form .actions button {
+		width: 100%;
+	}
 }
