@@ -444,7 +444,7 @@ class SessionManager:
             })
         return results
 
-    async def start(self, path: Path, yolo: bool, remote: bool = True, rows: int = 30, cols: int = 100) -> Session:
+    async def start(self, path: Path, yolo: bool, remote: bool = True, rows: int = 30, cols: int = 100, resume: str | None = None) -> Session:
         if not path.is_dir():
             raise web.HTTPBadRequest(reason="Path is not a directory")
         cmd = [COPILOT_BIN]
@@ -452,6 +452,8 @@ class SessionManager:
             cmd.append("--remote")
         if yolo:
             cmd.append("--yolo")
+        if resume:
+            cmd.extend(["--resume", resume])
         session = Session(path=path, yolo=yolo, remote=remote, cmd=cmd)
 
         try:
@@ -672,14 +674,26 @@ async def list_dir(request: web.Request):
 
 @routes.get("/api/sessions")
 async def sessions_list(request: web.Request):
+    # Prefer the newest (and running) session for any given pid. Pids get
+    # recycled by the kernel after a session exits, so two Session objects
+    # can legitimately share a pid — but we only want to show one row.
+    managed_sorted = sorted(
+        manager.list(),
+        key=lambda s: (1 if s.running else 0, s.started_at),
+        reverse=True,
+    )
     managed: list[dict[str, Any]] = []
-    for s in manager.list():
+    seen_mgr_pids: set[int] = set()
+    for s in managed_sorted:
+        if s.pid and s.pid in seen_mgr_pids:
+            continue
+        if s.pid:
+            seen_mgr_pids.add(s.pid)
         d = dict(s.to_dict(), adopted=False)
         d["abs_cwd"] = str(s.path)
         managed.append(d)
     adopted = manager.discover_external()
-    seen_pids = {s["pid"] for s in managed if s.get("pid")}
-    merged = managed + [a for a in adopted if a["pid"] not in seen_pids]
+    merged = managed + [a for a in adopted if a["pid"] not in seen_mgr_pids]
     # Attach the matching Copilot session id / summary when available.
     for entry in merged:
         abs_cwd = entry.get("abs_cwd") or ""
@@ -726,13 +740,26 @@ async def history_get(request: web.Request):
 @routes.post("/api/sessions/start")
 async def sessions_start(request: web.Request):
     data = await read_json(request)
-    rel = (data.get("path") or "").strip()
     yolo = bool(data.get("yolo"))
     remote = bool(data.get("remote", True))
     cols = int(data.get("cols") or 100)
     rows = int(data.get("rows") or 30)
-    target = resolve_workspace_path(rel)
-    session = await manager.start(target, yolo, remote=remote, rows=rows, cols=cols)
+    resume_id = (data.get("resume") or "").strip()
+    if resume_id:
+        if "/" in resume_id or ".." in resume_id:
+            raise web.HTTPBadRequest(reason="Invalid resume id")
+        entry_dir = _history_base() / resume_id
+        meta = _parse_workspace_yaml(entry_dir / "workspace.yaml") if entry_dir.is_dir() else {}
+        cwd = meta.get("cwd", "")
+        if not cwd:
+            raise web.HTTPNotFound(reason="Unknown session to resume")
+        target = Path(cwd)
+        if not target.is_dir():
+            raise web.HTTPBadRequest(reason=f"Resume cwd missing: {cwd}")
+    else:
+        rel = (data.get("path") or "").strip()
+        target = resolve_workspace_path(rel)
+    session = await manager.start(target, yolo, remote=remote, rows=rows, cols=cols, resume=resume_id or None)
     return web.json_response(session.to_dict())
 
 

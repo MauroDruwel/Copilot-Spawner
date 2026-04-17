@@ -241,14 +241,14 @@ button.primary:hover {
 }
 
 /* Extra action icons on list items (explorer per-folder buttons) */
-.list .actions {
+.list .actions, .history-resume .actions {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	margin-left: auto;
 	flex-shrink: 0;
 }
-.list .actions i {
+.list .actions, .history-resume .actions i {
 	margin: 0;
 	font-size: 20px;
 	padding: 10px;
@@ -258,46 +258,46 @@ button.primary:hover {
 	cursor: pointer;
 	transition: background .2s, color .2s, transform .1s;
 }
-.list .actions i:hover {
+.list .actions, .history-resume .actions i:hover {
 	background: hsl(var(--color), 70%, 70%);
 	color: hsl(var(--color), 20%, 12%);
 }
-.list .actions i.yolo {
+.list .actions, .history-resume .actions i.yolo {
 	background: hsl(24, 80%, 30%);
 	color: hsl(24, 100%, 92%);
 }
-.list .actions i.yolo:hover {
+.list .actions, .history-resume .actions i.yolo:hover {
 	background: hsl(24, 85%, 55%);
 	color: hsl(24, 30%, 10%);
 }
-.list .actions i.stop {
+.list .actions, .history-resume .actions i.stop {
 	background: hsl(0, 60%, 28%);
 	color: hsl(0, 100%, 92%);
 }
-.list .actions i.stop:hover {
+.list .actions, .history-resume .actions i.stop:hover {
 	background: hsl(0, 75%, 55%);
 	color: hsl(0, 30%, 10%);
 }
-.list .actions i.remote {
+.list .actions, .history-resume .actions i.remote {
 	background: hsl(var(--color), 14%, 14%);
 	color: #8892a7;
 	opacity: .55;
 }
-.list .actions i.remote:hover {
+.list .actions, .history-resume .actions i.remote:hover {
 	background: hsl(var(--color), 14%, 20%);
 	color: #d7e1ef;
 	opacity: 1;
 }
-.list .actions i.remote.on {
+.list .actions, .history-resume .actions i.remote.on {
 	background: hsl(var(--color), 60%, 22%);
 	color: hsl(var(--color), 95%, 85%);
 	opacity: 1;
 }
-.list .actions i.remote.on:hover {
+.list .actions, .history-resume .actions i.remote.on:hover {
 	background: hsl(var(--color), 70%, 35%);
 	color: hsl(var(--color), 30%, 10%);
 }
-.list .actions i:active {
+.list .actions, .history-resume .actions i:active {
 	transform: scale(0.92);
 }
 .list .item.status-running i.leading {
@@ -501,6 +501,39 @@ button.primary:hover {
 	color: hsl(var(--color), 90%, 75%);
 }
 
+/* Search box (history) */
+.search {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px;
+	margin: 0 0 10px;
+	border-radius: 100px;
+	background: hsl(var(--color), 14%, 12%);
+	border: 1px solid #ffffff10;
+}
+.search i {
+	font-family: "Material Symbols Outlined", sans-serif;
+	color: hsl(var(--color), 30%, 60%);
+}
+.search input {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	outline: 0;
+	color: hsl(var(--color), 95%, 90%);
+	font-family: inherit;
+	font-size: 14px;
+	padding: 6px 0;
+}
+.light .search {
+	background: #fff;
+	border-color: hsl(var(--color), 25%, 85%);
+}
+.light .search input {
+	color: hsl(var(--color), 20%, 18%);
+}
+
 /* History detail */
 .modal .history-panel {
 	max-width: 820px;
@@ -523,6 +556,26 @@ button.primary:hover {
 	gap: 16px;
 	display: flex;
 	flex-direction: column;
+}
+.history-resume {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 14px;
+	border-radius: 12px;
+	background: hsl(var(--color), 16%, 10%);
+	border: 1px solid #ffffff10;
+}
+.history-resume-label {
+	color: hsl(var(--color), 30%, 70%);
+	font-size: 13px;
+}
+.light .history-resume {
+	background: #fff;
+	border-color: hsl(var(--color), 25%, 85%);
+}
+.light .history-resume-label {
+	color: hsl(var(--color), 20%, 35%);
 }
 .history-meta {
 	display: grid;

@@ -2,23 +2,21 @@
 
 let currentPath = ""
 
-const REMOTE_KEY = "copilotspawner-remote"
-let remoteEnabled = (() => {
-	try {
-		const v = localStorage.getItem(REMOTE_KEY)
-		return v === null ? true : v === "true"
-	} catch { return true }
-})()
+// Per-key remote toggle. Keys are opaque strings (folder rel path, or
+// "history:<id>" for a resume action). Missing key means "on" (the default).
+const _remoteOverride = new Map()
 
-function setRemoteEnabled(on) {
-	remoteEnabled = !!on
-	try { localStorage.setItem(REMOTE_KEY, String(remoteEnabled)) } catch {}
-	refreshExplorer()
-	toast(`--remote ${remoteEnabled ? "on" : "off"}`, "")
+function isRemoteFor(key) {
+	return _remoteOverride.has(key) ? _remoteOverride.get(key) : true
 }
 
-function toggleRemote() {
-	setRemoteEnabled(!remoteEnabled)
+function toggleRemoteFor(key, iconEl) {
+	const next = !isRemoteFor(key)
+	_remoteOverride.set(key, next)
+	if (iconEl) {
+		iconEl.classList.toggle("on", next)
+		iconEl.title = `--remote is ${next ? "on" : "off"} (click to toggle)`
+	}
 }
 
 async function api(path, opts = {}) {
@@ -114,25 +112,33 @@ function renderExplorerItem(entry) {
 		const actions = document.createElement("div")
 		actions.className = "actions"
 
-		const cmdSuffix = (remoteEnabled ? " --remote" : "")
+		const key = entry.rel
+		const isOn = isRemoteFor(key)
+
 		const startBtn = document.createElement("i")
 		startBtn.innerText = "play_arrow"
-		startBtn.title = `Start copilot${cmdSuffix}`
+		startBtn.title = `Start copilot${isOn ? " --remote" : ""}`
 		startBtn.onclick = (ev) => { ev.stopPropagation(); startAgent(entry.rel, false) }
 		actions.appendChild(startBtn)
 
 		const yoloBtn = document.createElement("i")
 		yoloBtn.className = "yolo"
 		yoloBtn.innerText = "bolt"
-		yoloBtn.title = `Start copilot${cmdSuffix} --yolo`
+		yoloBtn.title = `Start copilot${isOn ? " --remote" : ""} --yolo`
 		yoloBtn.onclick = (ev) => { ev.stopPropagation(); startAgent(entry.rel, true) }
 		actions.appendChild(yoloBtn)
 
 		const remoteBtn = document.createElement("i")
-		remoteBtn.className = "remote" + (remoteEnabled ? " on" : "")
+		remoteBtn.className = "remote" + (isOn ? " on" : "")
 		remoteBtn.innerText = "public"
-		remoteBtn.title = `--remote is ${remoteEnabled ? "on" : "off"} (click to toggle)`
-		remoteBtn.onclick = (ev) => { ev.stopPropagation(); toggleRemote() }
+		remoteBtn.title = `--remote is ${isOn ? "on" : "off"} (click to toggle)`
+		remoteBtn.onclick = (ev) => {
+			ev.stopPropagation()
+			toggleRemoteFor(key, remoteBtn)
+			const on = isRemoteFor(key)
+			startBtn.title = `Start copilot${on ? " --remote" : ""}`
+			yoloBtn.title = `Start copilot${on ? " --remote" : ""} --yolo`
+		}
 		actions.appendChild(remoteBtn)
 
 		item.appendChild(actions)
@@ -153,7 +159,7 @@ function renderExplorerItem(entry) {
 const _startingAgents = new Set()
 
 async function startAgent(relPath, yolo) {
-	const remote = remoteEnabled
+	const remote = isRemoteFor(relPath)
 	const key = `${relPath}|${yolo ? 1 : 0}|${remote ? 1 : 0}`
 	if (_startingAgents.has(key)) return
 	_startingAgents.add(key)
@@ -166,6 +172,32 @@ async function startAgent(relPath, yolo) {
 		if (remote) parts.push("--remote")
 		if (yolo) parts.push("--yolo")
 		toast(`Started ${parts.join(" ")} on ${relPath || "~"}`, "success")
+		goto("sessions")
+	}
+	catch (e) {
+		toast(e.message, "error")
+	}
+	finally {
+		_startingAgents.delete(key)
+	}
+}
+
+async function resumeHistory(id, yolo) {
+	const remote = isRemoteFor("history:" + id)
+	const key = `resume:${id}|${yolo ? 1 : 0}|${remote ? 1 : 0}`
+	if (_startingAgents.has(key)) return
+	_startingAgents.add(key)
+	try {
+		await api("/sessions/start", {
+			method: "POST",
+			body: JSON.stringify({ resume: id, yolo, remote }),
+		})
+		const parts = ["copilot"]
+		if (remote) parts.push("--remote")
+		if (yolo) parts.push("--yolo")
+		parts.push("--resume", id.slice(0, 8) + "…")
+		toast(`Resumed ${parts.join(" ")}`, "success")
+		closeModal("history-modal")
 		goto("sessions")
 	}
 	catch (e) {
@@ -288,22 +320,38 @@ async function refreshSessionsBadge() {
 
 // ---- History ----
 
+let _historyCache = []
+
 async function refreshHistory() {
 	const listEl = get("history-list")
 	listEl.innerHTML = ""
 	try {
-		const data = await api("/history?limit=100")
-		if (!data.sessions.length) {
-			listEl.innerHTML = `<div class="empty"><i>history_toggle_off</i><div>No past sessions in ~/.copilot</div></div>`
-			refreshHistoryBadge(0)
-			return
-		}
-		for (const h of data.sessions) listEl.appendChild(renderHistoryItem(h))
-		refreshHistoryBadge(data.sessions.length)
+		const data = await api("/history?limit=200")
+		_historyCache = data.sessions
+		renderHistoryList()
+		refreshHistoryBadge(_historyCache.length)
 	}
 	catch (e) {
 		listEl.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
 	}
+}
+
+function renderHistoryList() {
+	const listEl = get("history-list")
+	listEl.innerHTML = ""
+	const q = (get("history-search")?.value || "").trim().toLowerCase()
+	const filtered = q
+		? _historyCache.filter(h => {
+			const hay = [h.id, h.summary, h.cwd, h.repository, h.branch].join(" ").toLowerCase()
+			return hay.includes(q)
+		})
+		: _historyCache
+	if (!filtered.length) {
+		const msg = q ? `No matches for "${escapeHtml(q)}"` : "No past sessions in ~/.copilot"
+		listEl.innerHTML = `<div class="empty"><i>history_toggle_off</i><div>${msg}</div></div>`
+		return
+	}
+	for (const h of filtered) listEl.appendChild(renderHistoryItem(h))
 }
 
 function refreshHistoryBadge(count) {
@@ -335,14 +383,45 @@ function renderHistoryItem(h) {
 	text.appendChild(name)
 	text.appendChild(value)
 
-	const arrow = document.createElement("i")
-	arrow.className = "arrow"
-
 	item.appendChild(icon)
 	item.appendChild(text)
-	item.appendChild(arrow)
+	item.appendChild(renderResumeActions(h.id))
 	item.onclick = () => openHistoryDetail(h.id)
 	return item
+}
+
+function renderResumeActions(id) {
+	const actions = document.createElement("div")
+	actions.className = "actions"
+	const key = "history:" + id
+	const isOn = isRemoteFor(key)
+
+	const resumeBtn = document.createElement("i")
+	resumeBtn.innerText = "play_arrow"
+	resumeBtn.title = `Resume copilot${isOn ? " --remote" : ""} --resume ${id.slice(0, 8)}`
+	resumeBtn.onclick = (ev) => { ev.stopPropagation(); resumeHistory(id, false) }
+	actions.appendChild(resumeBtn)
+
+	const yoloBtn = document.createElement("i")
+	yoloBtn.className = "yolo"
+	yoloBtn.innerText = "bolt"
+	yoloBtn.title = `Resume copilot${isOn ? " --remote" : ""} --yolo --resume ${id.slice(0, 8)}`
+	yoloBtn.onclick = (ev) => { ev.stopPropagation(); resumeHistory(id, true) }
+	actions.appendChild(yoloBtn)
+
+	const remoteBtn = document.createElement("i")
+	remoteBtn.className = "remote" + (isOn ? " on" : "")
+	remoteBtn.innerText = "public"
+	remoteBtn.title = `--remote is ${isOn ? "on" : "off"} (click to toggle)`
+	remoteBtn.onclick = (ev) => {
+		ev.stopPropagation()
+		toggleRemoteFor(key, remoteBtn)
+		const on = isRemoteFor(key)
+		resumeBtn.title = `Resume copilot${on ? " --remote" : ""} --resume ${id.slice(0, 8)}`
+		yoloBtn.title = `Resume copilot${on ? " --remote" : ""} --yolo --resume ${id.slice(0, 8)}`
+	}
+	actions.appendChild(remoteBtn)
+	return actions
 }
 
 async function openHistoryDetail(id) {
@@ -362,6 +441,15 @@ async function openHistoryDetail(id) {
 function renderHistoryDetail(d) {
 	const body = get("history-body")
 	body.innerHTML = ""
+
+	const resumeBar = document.createElement("div")
+	resumeBar.className = "history-resume"
+	const label = document.createElement("div")
+	label.className = "history-resume-label"
+	label.innerText = "Resume this session"
+	resumeBar.appendChild(label)
+	resumeBar.appendChild(renderResumeActions(d.id))
+	body.appendChild(resumeBar)
 
 	const meta = document.createElement("div")
 	meta.className = "history-meta"
@@ -410,6 +498,7 @@ let term = null
 let fitAddon = null
 let termWs = null
 let termResizeObs = null
+let termOnDataDisposable = null
 let currentTermId = null
 
 function ensureTerm() {
@@ -453,6 +542,13 @@ async function openTerminal(id) {
 	term.reset()
 	try { fitAddon.fit() } catch {}
 
+	// Dispose a previous keystroke handler before attaching a new one —
+	// otherwise xterm stacks them and every keystroke gets sent N times.
+	if (termOnDataDisposable) {
+		try { termOnDataDisposable.dispose() } catch {}
+		termOnDataDisposable = null
+	}
+
 	const scheme = location.protocol === "https:" ? "wss" : "ws"
 	const url = `${scheme}://${location.host}/api/sessions/${id}/ws`
 	termWs = new WebSocket(url)
@@ -477,7 +573,7 @@ async function openTerminal(id) {
 	}
 	termWs.onerror = () => setTermStatus("stopped", "error")
 	termWs.onclose = () => setTermStatus("stopped", "disconnected")
-	term.onData((d) => {
+	termOnDataDisposable = term.onData((d) => {
 		if (termWs && termWs.readyState === 1) termWs.send(d)
 	})
 }
@@ -493,6 +589,10 @@ function closeTerminal() {
 	if (termWs) {
 		try { termWs.close() } catch {}
 		termWs = null
+	}
+	if (termOnDataDisposable) {
+		try { termOnDataDisposable.dispose() } catch {}
+		termOnDataDisposable = null
 	}
 	currentTermId = null
 }

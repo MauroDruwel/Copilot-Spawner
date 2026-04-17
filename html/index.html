@@ -94,6 +94,10 @@
 				<i class="action" onclick="refreshHistory()" title="Refresh">refresh</i>
 			</div>
 			<div class="contents">
+				<div class="search">
+					<i>search</i>
+					<input type="text" id="history-search" placeholder="Search summary, id, path, repo…" oninput="renderHistoryList()" autocomplete="off">
+				</div>
 				<div class="list" id="history-list"></div>
 			</div>
 		</div>
