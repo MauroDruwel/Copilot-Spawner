@@ -521,6 +521,8 @@ function ensureTerm() {
 	fitAddon = new FitAddon.FitAddon()
 	term.loadAddon(fitAddon)
 	term.open(body)
+	// Exposed for end-to-end tests that need to trigger input programmatically.
+	window.__term = term
 	try { fitAddon.fit() } catch {}
 	termResizeObs = new ResizeObserver(() => {
 		try { fitAddon.fit() } catch {}

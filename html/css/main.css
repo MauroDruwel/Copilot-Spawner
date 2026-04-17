@@ -513,7 +513,6 @@ button.primary:hover {
 	border: 1px solid #ffffff10;
 }
 .search i {
-	font-family: "Material Symbols Outlined", sans-serif;
 	color: hsl(var(--color), 30%, 60%);
 }
 .search input {

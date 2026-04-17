@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test stub for the copilot CLI: prints its argv then sleeps forever so
+# the session is visibly "running" but harmless.
+echo "stub copilot args: $*"
+while true; do sleep 60; done
