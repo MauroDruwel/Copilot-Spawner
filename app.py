@@ -37,6 +37,8 @@ HTML_DIR = HERE / "html"
 WORKSPACE = Path(os.environ.get("COPILOT_WORKSPACE", str(HERE / "workspace"))).resolve()
 WORKSPACE.mkdir(parents=True, exist_ok=True)
 
+COPILOT_HOME = Path(os.environ.get("COPILOT_HOME", str(Path.home() / ".copilot")))
+
 COPILOT_BIN = os.environ.get("COPILOT_BIN", "copilot")
 HOST = os.environ.get("COPILOT_SPAWNER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("COPILOT_SPAWNER_PORT", "8765"))
@@ -160,6 +162,142 @@ async def read_json(request: web.Request) -> dict[str, Any]:
         return await request.json()
     except Exception:
         raise web.HTTPBadRequest(reason="Invalid JSON body")
+
+
+# ---------- copilot history (~/.copilot parsing) ----------
+
+def _parse_workspace_yaml(path: Path) -> dict[str, str]:
+    """Parse the flat `key: value` YAML files Copilot writes."""
+    out: dict[str, str] = {}
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                line = raw.rstrip("\n")
+                if not line or line.startswith("#") or ":" not in line:
+                    continue
+                key, _, val = line.partition(":")
+                out[key.strip()] = val.strip()
+    except OSError:
+        pass
+    return out
+
+
+def _iso_to_ts(s: str) -> float | None:
+    if not s:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _history_base() -> Path:
+    return COPILOT_HOME / "session-state"
+
+
+def _history_entry(d: Path) -> dict[str, Any] | None:
+    wy = d / "workspace.yaml"
+    if not wy.is_file():
+        return None
+    meta = _parse_workspace_yaml(wy)
+    if not meta:
+        return None
+    events = d / "events.jsonl"
+    return {
+        "id": meta.get("id") or d.name,
+        "cwd": meta.get("cwd", ""),
+        "summary": meta.get("summary", ""),
+        "repository": meta.get("repository", ""),
+        "branch": meta.get("branch", ""),
+        "host_type": meta.get("host_type", ""),
+        "created_at": _iso_to_ts(meta.get("created_at", "")),
+        "updated_at": _iso_to_ts(meta.get("updated_at", "")),
+        "has_events": events.is_file(),
+        "size": events.stat().st_size if events.is_file() else 0,
+    }
+
+
+def _list_history(limit: int | None = None) -> list[dict[str, Any]]:
+    base = _history_base()
+    if not base.is_dir():
+        return []
+    items: list[dict[str, Any]] = []
+    try:
+        subs = list(base.iterdir())
+    except OSError:
+        return []
+    for d in subs:
+        if not d.is_dir():
+            continue
+        entry = _history_entry(d)
+        if entry:
+            items.append(entry)
+    items.sort(key=lambda s: s.get("updated_at") or s.get("created_at") or 0, reverse=True)
+    if limit:
+        items = items[:limit]
+    return items
+
+
+def _match_copilot_session(abs_cwd: str) -> dict[str, str] | None:
+    """Find the most-recently-updated Copilot session whose cwd matches."""
+    if not abs_cwd:
+        return None
+    target = str(Path(abs_cwd)).rstrip("/")
+    base = _history_base()
+    if not base.is_dir():
+        return None
+    best: dict[str, str] | None = None
+    best_ts = -1.0
+    try:
+        subs = list(base.iterdir())
+    except OSError:
+        return None
+    for d in subs:
+        if not d.is_dir():
+            continue
+        meta = _parse_workspace_yaml(d / "workspace.yaml")
+        if not meta:
+            continue
+        if meta.get("cwd", "").rstrip("/") != target:
+            continue
+        ts = _iso_to_ts(meta.get("updated_at", "")) or _iso_to_ts(meta.get("created_at", "")) or 0
+        if ts > best_ts:
+            best_ts = ts
+            best = meta
+    return best
+
+
+def _extract_messages(events_path: Path, max_messages: int = 200) -> list[dict[str, Any]]:
+    """Pull user/assistant turns out of events.jsonl, stripped of internal wrappers."""
+    messages: list[dict[str, Any]] = []
+    if not events_path.is_file():
+        return messages
+    try:
+        with open(events_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                etype = ev.get("type")
+                data = ev.get("data") or {}
+                if etype == "user.message":
+                    c = str(data.get("content", "")).strip()
+                    if c:
+                        messages.append({"role": "user", "content": c, "ts": ev.get("timestamp")})
+                elif etype == "assistant.message":
+                    c = str(data.get("content", "")).strip()
+                    if c:
+                        messages.append({"role": "assistant", "content": c, "ts": ev.get("timestamp")})
+                if len(messages) >= max_messages:
+                    break
+    except OSError:
+        pass
+    return messages
 
 
 # ---------- session manager (PTY-based) ----------
@@ -534,14 +672,55 @@ async def list_dir(request: web.Request):
 
 @routes.get("/api/sessions")
 async def sessions_list(request: web.Request):
-    managed = [dict(s.to_dict(), adopted=False) for s in manager.list()]
+    managed: list[dict[str, Any]] = []
+    for s in manager.list():
+        d = dict(s.to_dict(), adopted=False)
+        d["abs_cwd"] = str(s.path)
+        managed.append(d)
     adopted = manager.discover_external()
-    # managed entries come first; dedupe by pid so a managed session that
-    # matches by pid isn't also reported as external.
     seen_pids = {s["pid"] for s in managed if s.get("pid")}
     merged = managed + [a for a in adopted if a["pid"] not in seen_pids]
+    # Attach the matching Copilot session id / summary when available.
+    for entry in merged:
+        abs_cwd = entry.get("abs_cwd") or ""
+        if not abs_cwd and entry.get("adopted"):
+            try:
+                abs_cwd = os.readlink(f"/proc/{entry['pid']}/cwd")
+            except OSError:
+                abs_cwd = ""
+        meta = _match_copilot_session(abs_cwd)
+        if meta:
+            entry["copilot_id"] = meta.get("id", "")
+            entry["copilot_summary"] = meta.get("summary", "")
+            entry["copilot_repository"] = meta.get("repository", "")
+            entry["copilot_branch"] = meta.get("branch", "")
+        entry.pop("abs_cwd", None)
     merged.sort(key=lambda s: s.get("started_at") or 0, reverse=True)
     return web.json_response({"sessions": merged})
+
+
+@routes.get("/api/history")
+async def history_list(request: web.Request):
+    try:
+        limit = int(request.query.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    return web.json_response({"sessions": _list_history(limit=limit)})
+
+
+@routes.get("/api/history/{sid}")
+async def history_get(request: web.Request):
+    sid = request.match_info["sid"]
+    if "/" in sid or ".." in sid or not sid:
+        raise web.HTTPBadRequest(reason="Invalid id")
+    d = _history_base() / sid
+    if not d.is_dir():
+        raise web.HTTPNotFound(reason="Unknown session")
+    entry = _history_entry(d)
+    if not entry:
+        raise web.HTTPNotFound(reason="No workspace.yaml")
+    entry["messages"] = _extract_messages(d / "events.jsonl")
+    return web.json_response(entry)
 
 
 @routes.post("/api/sessions/start")

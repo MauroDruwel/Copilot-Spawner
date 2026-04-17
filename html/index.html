@@ -52,6 +52,14 @@
 						</div>
 						<i class="arrow"></i>
 					</div>
+					<div class="item clickable" onclick="goto('history')">
+						<i>history</i>
+						<div class="text">
+							<div class="name">Recent history</div>
+							<div class="value" id="main-history">Past Copilot sessions</div>
+						</div>
+						<i class="arrow"></i>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -73,6 +81,20 @@
 			<div class="contents">
 				<div class="crumbs" id="explorer-path">~</div>
 				<div class="list" id="explorer-list"></div>
+			</div>
+		</div>
+	</div>
+
+	<!-- History screen -->
+	<div class="screen hidden" id="history">
+		<div class="wrapper">
+			<div class="header">
+				<i class="back"></i>
+				<div class="title">Recent history</div>
+				<i class="action" onclick="refreshHistory()" title="Refresh">refresh</i>
+			</div>
+			<div class="contents">
+				<div class="list" id="history-list"></div>
 			</div>
 		</div>
 	</div>
@@ -266,6 +288,18 @@
 					</div>
 				</div>
 			</div>
+		</div>
+	</div>
+
+	<!-- History detail modal -->
+	<div class="modal" id="history-modal">
+		<div class="panel history-panel">
+			<div class="panel-header">
+				<i>history</i>
+				<div class="title" id="history-title">Session</div>
+				<i class="close" onclick="closeModal('history-modal')"></i>
+			</div>
+			<div class="panel-body history-body" id="history-body"></div>
 		</div>
 	</div>
 

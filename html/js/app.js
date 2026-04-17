@@ -204,7 +204,8 @@ function renderSessionItem(s) {
 	text.className = "text"
 	const name = document.createElement("div")
 	name.className = "name"
-	name.innerText = s.path || "~"
+	const title = s.copilot_summary || s.path || "~"
+	name.innerText = title
 	const value = document.createElement("div")
 	value.className = "value"
 	const stateText = s.running ? "running" : `stopped${s.exit_code != null ? ` (exit ${s.exit_code})` : ""}`
@@ -212,8 +213,12 @@ function renderSessionItem(s) {
 	if (s.adopted) flags.push("external")
 	if (s.remote) flags.push("remote")
 	if (s.yolo) flags.push("yolo")
+	const bits = []
+	if (s.copilot_id) bits.push(s.copilot_id.slice(0, 8))
+	if (s.copilot_summary && s.path) bits.push(s.path)
+	bits.push(stateText, `pid ${s.pid ?? "-"}`, formatTime(s.started_at))
 	const prefix = flags.length ? flags.join(" · ") + " · " : ""
-	value.innerText = `${prefix}${stateText} · pid ${s.pid ?? "-"} · ${formatTime(s.started_at)}`
+	value.innerText = prefix + bits.join(" · ")
 	text.appendChild(name)
 	text.appendChild(value)
 
@@ -280,6 +285,124 @@ async function refreshSessionsBadge() {
 	}
 	catch { /* ignore */ }
 }
+
+// ---- History ----
+
+async function refreshHistory() {
+	const listEl = get("history-list")
+	listEl.innerHTML = ""
+	try {
+		const data = await api("/history?limit=100")
+		if (!data.sessions.length) {
+			listEl.innerHTML = `<div class="empty"><i>history_toggle_off</i><div>No past sessions in ~/.copilot</div></div>`
+			refreshHistoryBadge(0)
+			return
+		}
+		for (const h of data.sessions) listEl.appendChild(renderHistoryItem(h))
+		refreshHistoryBadge(data.sessions.length)
+	}
+	catch (e) {
+		listEl.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
+	}
+}
+
+function refreshHistoryBadge(count) {
+	const el = get("main-history")
+	if (!el) return
+	if (count > 0) el.innerText = `${count} past session${count === 1 ? "" : "s"}`
+	else el.innerText = "No past sessions"
+}
+
+function renderHistoryItem(h) {
+	const item = document.createElement("div")
+	item.className = "item clickable"
+
+	const icon = document.createElement("i")
+	icon.innerText = h.repository ? "source" : "forum"
+
+	const text = document.createElement("div")
+	text.className = "text"
+	const name = document.createElement("div")
+	name.className = "name"
+	name.innerText = h.summary || "(no summary)"
+	const value = document.createElement("div")
+	value.className = "value"
+	const bits = [h.id.slice(0, 8)]
+	if (h.repository) bits.push(h.repository + (h.branch ? ` @ ${h.branch}` : ""))
+	if (h.cwd) bits.push(h.cwd)
+	if (h.updated_at) bits.push(formatDate(h.updated_at))
+	value.innerText = bits.join(" · ")
+	text.appendChild(name)
+	text.appendChild(value)
+
+	const arrow = document.createElement("i")
+	arrow.className = "arrow"
+
+	item.appendChild(icon)
+	item.appendChild(text)
+	item.appendChild(arrow)
+	item.onclick = () => openHistoryDetail(h.id)
+	return item
+}
+
+async function openHistoryDetail(id) {
+	get("history-title").innerText = "Session " + id.slice(0, 8)
+	const body = get("history-body")
+	body.innerHTML = `<div class="empty"><i>hourglass_top</i><div>Loading…</div></div>`
+	openModal("history-modal")
+	try {
+		const d = await api("/history/" + encodeURIComponent(id))
+		renderHistoryDetail(d)
+	}
+	catch (e) {
+		body.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
+	}
+}
+
+function renderHistoryDetail(d) {
+	const body = get("history-body")
+	body.innerHTML = ""
+
+	const meta = document.createElement("div")
+	meta.className = "history-meta"
+	const rows = [
+		["id", d.id],
+		["summary", d.summary || "—"],
+		["cwd", d.cwd || "—"],
+		["repository", d.repository ? d.repository + (d.branch ? " @ " + d.branch : "") : "—"],
+		["created", d.created_at ? formatDate(d.created_at) : "—"],
+		["updated", d.updated_at ? formatDate(d.updated_at) : "—"],
+	]
+	for (const [k, v] of rows) {
+		const row = document.createElement("div")
+		row.className = "meta-row"
+		row.innerHTML = `<span class="key">${escapeHtml(k)}</span><span class="val">${escapeHtml(String(v))}</span>`
+		meta.appendChild(row)
+	}
+	body.appendChild(meta)
+
+	const msgs = document.createElement("div")
+	msgs.className = "history-messages"
+	if (!d.messages || !d.messages.length) {
+		msgs.innerHTML = `<div class="empty"><i>forum</i><div>No transcript recorded</div></div>`
+	} else {
+		for (const m of d.messages) {
+			const row = document.createElement("div")
+			row.className = "msg msg-" + (m.role === "user" ? "user" : "assistant")
+			const who = document.createElement("div")
+			who.className = "who"
+			who.innerText = m.role
+			const content = document.createElement("div")
+			content.className = "content"
+			content.innerText = m.content
+			row.appendChild(who)
+			row.appendChild(content)
+			msgs.appendChild(row)
+		}
+	}
+	body.appendChild(msgs)
+}
+
 
 // ---- Terminal modal (xterm.js + WebSocket) ----
 
@@ -482,4 +605,16 @@ function formatTime(ts) {
 	if (!ts) return ""
 	const d = new Date(ts * 1000)
 	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatDate(ts) {
+	if (!ts) return ""
+	const d = new Date(ts * 1000)
+	const now = Date.now()
+	const dayMs = 24 * 3600 * 1000
+	if (now - d.getTime() < dayMs) return formatTime(ts)
+	if (now - d.getTime() < 7 * dayMs) {
+		return d.toLocaleDateString([], { weekday: "short" }) + " " + formatTime(ts)
+	}
+	return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + formatTime(ts)
 }

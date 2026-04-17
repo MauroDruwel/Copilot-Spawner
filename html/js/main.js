@@ -50,6 +50,7 @@ function goto(target, updateHash = true) {
 	}
 	if (target == "explorer") refreshExplorer()
 	if (target == "sessions") refreshSessions()
+	if (target == "history") refreshHistory()
 }
 
 function goBack() {
