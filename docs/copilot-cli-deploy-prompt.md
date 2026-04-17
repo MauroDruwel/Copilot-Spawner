@@ -8,9 +8,9 @@ Before running commands, ask the user:
 
 1. Install tool: `uv` (recommended) or `venv + pip`
 2. Install path (default: `~/Copilot-Spawner`)
-3. Port (default: `4510`)
-4. Workspace path (default: `$HOME`)
-5. Copilot binary path (default: `$HOME/.local/bin/copilot`)
+3. Port (default: `8765`)
+4. Workspace path (default: `<install-path>/workspace`)
+5. Copilot binary path (default: `copilot`)
 6. Keep existing password/secret in service file if present? (recommended: yes)
 
 ## Deployment tasks
