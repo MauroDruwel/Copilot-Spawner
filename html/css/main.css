@@ -86,10 +86,20 @@ body {
 	padding: 10px;
 	cursor: pointer;
 	border-radius: 12px;
-	transition: background .2s;
+	transition: background .2s, color .2s;
 }
 .header .action:hover {
 	background: #FFFFFF18;
+	color: hsl(var(--color), 90%, 75%);
+}
+.header .header-actions {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.header .header-actions .action {
+	margin-left: 0;
 }
 
 .contents {
@@ -448,6 +458,28 @@ button.primary:hover {
 	word-break: break-word;
 	background: hsl(var(--color), 20%, 3%);
 	color: hsl(var(--color), 95%, 90%);
+}
+
+/* Form-style modal (new folder / clone / contributors) */
+.modal .form-panel {
+	max-width: 540px;
+}
+.modal .panel-body.form-body {
+	padding: 8px;
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	white-space: normal;
+	word-break: normal;
+	background: transparent;
+	color: inherit;
+}
+.form-body .form {
+	margin: 0;
+}
+.form-panel .panel-header i {
+	margin-right: 10px;
+	color: hsl(var(--color), 90%, 75%);
 }
 
 /* Terminal */

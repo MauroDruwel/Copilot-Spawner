@@ -328,7 +328,24 @@ function closeTerminal() {
 	currentTermId = null
 }
 
+// ---- Modal helpers ----
+
+function openModal(id) {
+	get(id).classList.add("show")
+}
+
+function closeModal(id) {
+	get(id).classList.remove("show")
+}
+
 // ---- New folder ----
+
+function openNewFolder() {
+	get("new-folder-name").value = ""
+	get("new-folder-parent").value = currentPath || "."
+	openModal("new-folder-modal")
+	setTimeout(() => get("new-folder-name").focus(), 50)
+}
 
 async function createFolder() {
 	const name = get("new-folder-name").value.trim()
@@ -340,13 +357,20 @@ async function createFolder() {
 			body: JSON.stringify({ name, parent }),
 		})
 		toast("Folder created", "success")
-		get("new-folder-name").value = ""
-		goto("explorer")
+		closeModal("new-folder-modal")
+		refreshExplorer()
 	}
 	catch (e) { toast(e.message, "error") }
 }
 
 // ---- Clone ----
+
+function openClone() {
+	get("clone-url").value = ""
+	get("clone-dir").value = ""
+	openModal("clone-modal")
+	setTimeout(() => get("clone-url").focus(), 50)
+}
 
 async function cloneRepo() {
 	const url = get("clone-url").value.trim()
@@ -359,14 +383,23 @@ async function cloneRepo() {
 			body: JSON.stringify({ url, dir }),
 		})
 		toast("Cloned into " + data.path, "success")
-		get("clone-url").value = ""
-		get("clone-dir").value = ""
-		goto("explorer")
+		closeModal("clone-modal")
+		refreshExplorer()
 	}
 	catch (e) { toast(e.message, "error") }
 }
 
 // ---- Contributors ----
+
+function openContributors() {
+	get("contrib-user").value = ""
+	openModal("contributors-modal")
+	setTimeout(() => {
+		const repoEl = get("contrib-repo")
+		if (!repoEl.value) repoEl.focus()
+		else get("contrib-user").focus()
+	}, 50)
+}
 
 async function addContributor() {
 	const repo = get("contrib-repo").value.trim()
@@ -379,7 +412,7 @@ async function addContributor() {
 			body: JSON.stringify({ repo, user, permission: perm }),
 		})
 		toast(`Invited ${user} to ${repo}`, "success")
-		get("contrib-user").value = ""
+		closeModal("contributors-modal")
 	}
 	catch (e) { toast(e.message, "error") }
 }

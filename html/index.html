@@ -52,30 +52,6 @@
 						</div>
 						<i class="arrow"></i>
 					</div>
-					<div class="item clickable" onclick="goto('new-folder')">
-						<i>create_new_folder</i>
-						<div class="text">
-							<div class="name">New folder</div>
-							<div class="value">Create a folder in workspace</div>
-						</div>
-						<i class="arrow"></i>
-					</div>
-					<div class="item clickable" onclick="goto('clone')">
-						<i>cloud_download</i>
-						<div class="text">
-							<div class="name">Clone repo</div>
-							<div class="value">Clone a git repository</div>
-						</div>
-						<i class="arrow"></i>
-					</div>
-					<div class="item clickable" onclick="goto('contributors')">
-						<i>group_add</i>
-						<div class="text">
-							<div class="name">Contributors</div>
-							<div class="value">Add collaborators to a repo</div>
-						</div>
-						<i class="arrow"></i>
-					</div>
 				</div>
 			</div>
 		</div>
@@ -87,7 +63,12 @@
 			<div class="header">
 				<i class="back"></i>
 				<div class="title">Explorer</div>
-				<i class="action" onclick="refreshExplorer()" title="Refresh">refresh</i>
+				<div class="header-actions">
+					<i class="action" onclick="openNewFolder()" title="New folder here">create_new_folder</i>
+					<i class="action" onclick="openClone()" title="Clone a git repository">cloud_download</i>
+					<i class="action" onclick="openContributors()" title="Invite a collaborator">group_add</i>
+					<i class="action" onclick="refreshExplorer()" title="Refresh">refresh</i>
+				</div>
 			</div>
 			<div class="contents">
 				<div class="crumbs" id="explorer-path">~</div>
@@ -106,103 +87,6 @@
 			</div>
 			<div class="contents">
 				<div class="list" id="sessions-list"></div>
-			</div>
-		</div>
-	</div>
-
-	<!-- New folder screen -->
-	<div class="screen hidden" id="new-folder">
-		<div class="wrapper">
-			<div class="header">
-				<i class="back"></i>
-				<div class="title">New folder</div>
-			</div>
-			<div class="contents">
-				<div class="form">
-					<label>
-						<span class="caption">Folder name</span>
-						<input type="text" id="new-folder-name" placeholder="my-project" autocomplete="off">
-					</label>
-					<label>
-						<span class="caption">Parent (relative to workspace)</span>
-						<input type="text" id="new-folder-parent" placeholder="." value="." autocomplete="off">
-					</label>
-					<div class="actions">
-						<button class="primary" onclick="createFolder()">
-							<i>check</i>
-							<p>Create</p>
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Clone repo screen -->
-	<div class="screen hidden" id="clone">
-		<div class="wrapper">
-			<div class="header">
-				<i class="back"></i>
-				<div class="title">Clone repo</div>
-			</div>
-			<div class="contents">
-				<div class="form">
-					<label>
-						<span class="caption">Repository URL</span>
-						<input type="text" id="clone-url" placeholder="https://github.com/owner/repo.git" autocomplete="off">
-					</label>
-					<label>
-						<span class="caption">Target folder (optional)</span>
-						<input type="text" id="clone-dir" placeholder="leave empty to use repo name" autocomplete="off">
-					</label>
-					<div class="actions">
-						<button class="primary" onclick="cloneRepo()">
-							<i>cloud_download</i>
-							<p>Clone</p>
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Contributors screen -->
-	<div class="screen hidden" id="contributors">
-		<div class="wrapper">
-			<div class="header">
-				<i class="back"></i>
-				<div class="title">Contributors</div>
-			</div>
-			<div class="contents">
-				<div class="form">
-					<label>
-						<span class="caption">Repository (owner/repo)</span>
-						<input type="text" id="contrib-repo" placeholder="octocat/hello-world" autocomplete="off">
-					</label>
-					<label>
-						<span class="caption">GitHub username to add</span>
-						<input type="text" id="contrib-user" placeholder="username" autocomplete="off">
-					</label>
-					<label>
-						<span class="caption">Permission</span>
-						<select id="contrib-perm">
-							<option value="pull">Read</option>
-							<option value="triage">Triage</option>
-							<option value="push" selected>Write</option>
-							<option value="maintain">Maintain</option>
-							<option value="admin">Admin</option>
-						</select>
-					</label>
-					<div class="actions">
-						<button class="primary" onclick="addContributor()">
-							<i>group_add</i>
-							<p>Invite</p>
-						</button>
-					</div>
-				</div>
-				<div class="chips" style="padding: 16px;">
-					<div class="chip"><i>info</i>Requires <code style="margin-left:4px">GITHUB_TOKEN</code> on the server</div>
-				</div>
 			</div>
 		</div>
 	</div>
@@ -272,6 +156,118 @@
 
 	<!-- Toast -->
 	<div class="toast" id="toast"></div>
+
+	<!-- New folder modal -->
+	<div class="modal" id="new-folder-modal">
+		<div class="panel form-panel">
+			<div class="panel-header">
+				<i>create_new_folder</i>
+				<div class="title">New folder</div>
+				<i class="close" onclick="closeModal('new-folder-modal')"></i>
+			</div>
+			<div class="panel-body form-body">
+				<div class="form">
+					<label>
+						<span class="caption">Folder name</span>
+						<input type="text" id="new-folder-name" placeholder="my-project" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Parent (relative to workspace)</span>
+						<input type="text" id="new-folder-parent" placeholder="." value="." autocomplete="off">
+					</label>
+					<div class="actions">
+						<button onclick="closeModal('new-folder-modal')">
+							<i>close</i>
+							<p>Cancel</p>
+						</button>
+						<button class="primary" onclick="createFolder()">
+							<i>check</i>
+							<p>Create</p>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Clone repo modal -->
+	<div class="modal" id="clone-modal">
+		<div class="panel form-panel">
+			<div class="panel-header">
+				<i>cloud_download</i>
+				<div class="title">Clone repo</div>
+				<i class="close" onclick="closeModal('clone-modal')"></i>
+			</div>
+			<div class="panel-body form-body">
+				<div class="form">
+					<label>
+						<span class="caption">Repository URL</span>
+						<input type="text" id="clone-url" placeholder="https://github.com/owner/repo.git" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Target folder (relative to workspace)</span>
+						<input type="text" id="clone-dir" placeholder="leave empty to use repo name" autocomplete="off">
+					</label>
+					<div class="actions">
+						<button onclick="closeModal('clone-modal')">
+							<i>close</i>
+							<p>Cancel</p>
+						</button>
+						<button class="primary" onclick="cloneRepo()">
+							<i>cloud_download</i>
+							<p>Clone</p>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Contributors modal -->
+	<div class="modal" id="contributors-modal">
+		<div class="panel form-panel">
+			<div class="panel-header">
+				<i>group_add</i>
+				<div class="title">Invite collaborator</div>
+				<i class="close" onclick="closeModal('contributors-modal')"></i>
+			</div>
+			<div class="panel-body form-body">
+				<div class="form">
+					<label>
+						<span class="caption">Repository (owner/repo)</span>
+						<input type="text" id="contrib-repo" placeholder="octocat/hello-world" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">GitHub username to add</span>
+						<input type="text" id="contrib-user" placeholder="username" autocomplete="off">
+					</label>
+					<label>
+						<span class="caption">Permission</span>
+						<select id="contrib-perm">
+							<option value="pull">Read</option>
+							<option value="triage">Triage</option>
+							<option value="push" selected>Write</option>
+							<option value="maintain">Maintain</option>
+							<option value="admin">Admin</option>
+						</select>
+					</label>
+					<div class="chips">
+						<div class="chip"><i>info</i>Requires <code style="margin-left:4px">GITHUB_TOKEN</code> on the server</div>
+					</div>
+					<div class="actions">
+						<button onclick="closeModal('contributors-modal')">
+							<i>close</i>
+							<p>Cancel</p>
+						</button>
+						<button class="primary" onclick="addContributor()">
+							<i>group_add</i>
+							<p>Invite</p>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
 
 	<!-- Terminal modal -->
 	<div class="modal" id="term-modal">
