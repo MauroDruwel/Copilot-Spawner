@@ -123,9 +123,14 @@ function renderExplorerItem(entry) {
 
 // ---- Sessions ----
 
+const _startingAgents = new Set()
+
 async function startAgent(relPath, yolo) {
+	const key = `${relPath}|${yolo ? 1 : 0}`
+	if (_startingAgents.has(key)) return
+	_startingAgents.add(key)
 	try {
-		const data = await api("/sessions/start", {
+		await api("/sessions/start", {
 			method: "POST",
 			body: JSON.stringify({ path: relPath, yolo }),
 		})
@@ -134,6 +139,9 @@ async function startAgent(relPath, yolo) {
 	}
 	catch (e) {
 		toast(e.message, "error")
+	}
+	finally {
+		_startingAgents.delete(key)
 	}
 }
 
@@ -159,7 +167,7 @@ function renderSessionItem(s) {
 
 	const icon = document.createElement("i")
 	icon.className = "leading"
-	icon.innerText = s.running ? "smart_toy" : "block"
+	icon.innerText = s.adopted ? "public" : (s.running ? "smart_toy" : "block")
 
 	const text = document.createElement("div")
 	text.className = "text"
@@ -169,24 +177,27 @@ function renderSessionItem(s) {
 	const value = document.createElement("div")
 	value.className = "value"
 	const stateText = s.running ? "running" : `stopped${s.exit_code != null ? ` (exit ${s.exit_code})` : ""}`
-	value.innerText = `${s.yolo ? "yolo · " : ""}${stateText} · pid ${s.pid ?? "-"} · ${formatTime(s.started_at)}`
+	const prefix = s.adopted ? "external · " : (s.yolo ? "yolo · " : "")
+	value.innerText = `${prefix}${stateText} · pid ${s.pid ?? "-"} · ${formatTime(s.started_at)}`
 	text.appendChild(name)
 	text.appendChild(value)
 
 	const actions = document.createElement("div")
 	actions.className = "actions"
 
-	const termBtn = document.createElement("i")
-	termBtn.innerText = "terminal"
-	termBtn.title = s.running ? "Open terminal" : "View transcript"
-	termBtn.onclick = () => openTerminal(s.id)
-	actions.appendChild(termBtn)
+	if (!s.adopted) {
+		const termBtn = document.createElement("i")
+		termBtn.innerText = "terminal"
+		termBtn.title = s.running ? "Open terminal" : "View transcript"
+		termBtn.onclick = () => openTerminal(s.id)
+		actions.appendChild(termBtn)
+	}
 
 	if (s.running) {
 		const stopBtn = document.createElement("i")
 		stopBtn.className = "stop"
 		stopBtn.innerText = "stop"
-		stopBtn.title = "Stop session"
+		stopBtn.title = s.adopted ? "Stop external session (SIGTERM)" : "Stop session"
 		stopBtn.onclick = () => stopSession(s.id)
 		actions.appendChild(stopBtn)
 	}

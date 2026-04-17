@@ -52,6 +52,7 @@ All locked behind a password, ready to sit safely behind Cloudflare or any rever
 - **Real PTY sessions** — backed by `pty.fork()`, so interactive CLIs and ANSI output work exactly as they do locally
 - **Web terminal** — live bidirectional I/O over WebSocket, rendered with `xterm.js`, auto-resizes with the modal
 - **Session manager** — list, view transcript, stop, delete
+- **Adopts external sessions** — on Linux, scans `/proc` so `copilot --remote` processes started outside the app still show up in the list and can be stopped (you can't attach a terminal to them — we don't own their PTY)
 - **Workspace actions** — create folders and clone git repos without leaving the UI
 - **Contributors** — invite GitHub collaborators via the API (needs a `GITHUB_TOKEN`)
 - **Themes** — eight accent colors, light/dark, follows platform theme if you want

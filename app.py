@@ -172,6 +172,23 @@ def set_winsize(fd: int, rows: int, cols: int):
         pass
 
 
+def _proc_start_time(pid: int) -> float | None:
+    """Wall-clock start time of a Linux process, or None if unavailable."""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as f:
+            raw = f.read().decode("utf-8", errors="replace")
+        # format: "pid (comm) state ppid ..." — comm may contain spaces/parens,
+        # so anchor on the final ')'.
+        rest = raw[raw.rfind(")") + 2:].split()
+        starttime_ticks = int(rest[19])  # field 22, 0-indexed after comm split
+        clk_tck = os.sysconf("SC_CLK_TCK")
+        with open("/proc/uptime") as f:
+            uptime = float(f.read().split()[0])
+        return (time.time() - uptime) + starttime_ticks / clk_tck
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 class Session:
     def __init__(self, path: Path, yolo: bool, cmd: list[str]):
         self.id = uuid.uuid4().hex
@@ -219,6 +236,72 @@ class SessionManager:
         if not s:
             raise web.HTTPNotFound(reason="Unknown session")
         return s
+
+    def discover_external(self) -> list[dict[str, Any]]:
+        """Scan /proc for copilot processes this app didn't spawn.
+
+        Adopted sessions are returned as dicts with id="ext-<pid>" and
+        adopted=True. They can be listed and stopped but not attached
+        to via the WebSocket (we don't own their PTY).
+        """
+        if not os.path.isdir("/proc"):
+            return []
+        known_pids = {s.pid for s in self.sessions.values() if s.pid}
+        known_pids.add(os.getpid())  # never adopt ourselves
+        copilot_base = os.path.basename(COPILOT_BIN)
+        results: list[dict[str, Any]] = []
+        try:
+            entries = os.listdir("/proc")
+        except OSError:
+            return results
+        for ent in entries:
+            if not ent.isdigit():
+                continue
+            pid = int(ent)
+            if pid in known_pids:
+                continue
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    parts = [a.decode("utf-8", errors="replace") for a in f.read().split(b"\x00") if a]
+            except (OSError, FileNotFoundError):
+                continue
+            if not parts or "--remote" not in parts:
+                continue
+            # The copilot CLI is often a script, so argv[0] may be the
+            # interpreter (node, python, bash). Accept a match anywhere in
+            # the first few argv entries.
+            if not any(os.path.basename(p) == copilot_base for p in parts[:3]):
+                continue
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                cwd = ""
+            rel_or_abs = cwd
+            try:
+                if cwd:
+                    rel = Path(cwd).resolve().relative_to(WORKSPACE)
+                    s = str(rel)
+                    rel_or_abs = "" if s == "." else s
+            except ValueError:
+                pass  # outside workspace; keep absolute cwd
+            except OSError:
+                pass
+            started_at = _proc_start_time(pid) or time.time()
+            results.append({
+                "id": f"ext-{pid}",
+                "path": rel_or_abs,
+                "yolo": "--yolo" in parts,
+                "cmd": parts,
+                "started_at": started_at,
+                "ended_at": None,
+                "exit_code": None,
+                "pid": pid,
+                "running": True,
+                "output_bytes": 0,
+                "attached": 0,
+                "adopted": True,
+            })
+        return results
 
     async def start(self, path: Path, yolo: bool, rows: int = 30, cols: int = 100) -> Session:
         if not path.is_dir():
@@ -446,7 +529,14 @@ async def list_dir(request: web.Request):
 
 @routes.get("/api/sessions")
 async def sessions_list(request: web.Request):
-    return web.json_response({"sessions": [s.to_dict() for s in manager.list()]})
+    managed = [dict(s.to_dict(), adopted=False) for s in manager.list()]
+    adopted = manager.discover_external()
+    # managed entries come first; dedupe by pid so a managed session that
+    # matches by pid isn't also reported as external.
+    seen_pids = {s["pid"] for s in managed if s.get("pid")}
+    merged = managed + [a for a in adopted if a["pid"] not in seen_pids]
+    merged.sort(key=lambda s: s.get("started_at") or 0, reverse=True)
+    return web.json_response({"sessions": merged})
 
 
 @routes.post("/api/sessions/start")
@@ -461,9 +551,32 @@ async def sessions_start(request: web.Request):
     return web.json_response(session.to_dict())
 
 
+def _kill_pgid(pid: int, sig: int) -> bool:
+    try:
+        os.killpg(os.getpgid(pid), sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
 @routes.post("/api/sessions/{sid}/stop")
 async def sessions_stop(request: web.Request):
     sid = request.match_info["sid"]
+    if sid.startswith("ext-"):
+        try:
+            pid = int(sid[4:])
+        except ValueError:
+            raise web.HTTPBadRequest(reason="Invalid adopted session id")
+        _kill_pgid(pid, signal.SIGTERM)
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            _kill_pgid(pid, signal.SIGKILL)
+        return web.json_response({"ok": True, "id": sid, "adopted": True, "running": False})
     session = await manager.stop(sid)
     return web.json_response(session.to_dict())
 
@@ -483,6 +596,10 @@ async def sessions_log(request: web.Request):
 @routes.delete("/api/sessions/{sid}")
 async def sessions_delete(request: web.Request):
     sid = request.match_info["sid"]
+    if sid.startswith("ext-"):
+        # Nothing to forget: adopted sessions are only ever reported live
+        # from /proc. If the process is gone, it disappears on next list.
+        return web.json_response({"ok": True, "adopted": True})
     await manager.delete(sid)
     return web.json_response({"ok": True})
 
