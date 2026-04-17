@@ -2,6 +2,25 @@
 
 let currentPath = ""
 
+const REMOTE_KEY = "copilotspawner-remote"
+let remoteEnabled = (() => {
+	try {
+		const v = localStorage.getItem(REMOTE_KEY)
+		return v === null ? true : v === "true"
+	} catch { return true }
+})()
+
+function setRemoteEnabled(on) {
+	remoteEnabled = !!on
+	try { localStorage.setItem(REMOTE_KEY, String(remoteEnabled)) } catch {}
+	refreshExplorer()
+	toast(`--remote ${remoteEnabled ? "on" : "off"}`, "")
+}
+
+function toggleRemote() {
+	setRemoteEnabled(!remoteEnabled)
+}
+
 async function api(path, opts = {}) {
 	const resp = await fetch("/api" + path, {
 		headers: { "Content-Type": "application/json" },
@@ -95,18 +114,26 @@ function renderExplorerItem(entry) {
 		const actions = document.createElement("div")
 		actions.className = "actions"
 
+		const cmdSuffix = (remoteEnabled ? " --remote" : "")
 		const startBtn = document.createElement("i")
 		startBtn.innerText = "play_arrow"
-		startBtn.title = "Start copilot --remote"
+		startBtn.title = `Start copilot${cmdSuffix}`
 		startBtn.onclick = (ev) => { ev.stopPropagation(); startAgent(entry.rel, false) }
 		actions.appendChild(startBtn)
 
 		const yoloBtn = document.createElement("i")
 		yoloBtn.className = "yolo"
 		yoloBtn.innerText = "bolt"
-		yoloBtn.title = "Start copilot --remote --yolo"
+		yoloBtn.title = `Start copilot${cmdSuffix} --yolo`
 		yoloBtn.onclick = (ev) => { ev.stopPropagation(); startAgent(entry.rel, true) }
 		actions.appendChild(yoloBtn)
+
+		const remoteBtn = document.createElement("i")
+		remoteBtn.className = "remote" + (remoteEnabled ? " on" : "")
+		remoteBtn.innerText = "public"
+		remoteBtn.title = `--remote is ${remoteEnabled ? "on" : "off"} (click to toggle)`
+		remoteBtn.onclick = (ev) => { ev.stopPropagation(); toggleRemote() }
+		actions.appendChild(remoteBtn)
 
 		item.appendChild(actions)
 		item.onclick = () => refreshExplorer(entry.rel)
@@ -126,15 +153,19 @@ function renderExplorerItem(entry) {
 const _startingAgents = new Set()
 
 async function startAgent(relPath, yolo) {
-	const key = `${relPath}|${yolo ? 1 : 0}`
+	const remote = remoteEnabled
+	const key = `${relPath}|${yolo ? 1 : 0}|${remote ? 1 : 0}`
 	if (_startingAgents.has(key)) return
 	_startingAgents.add(key)
 	try {
 		await api("/sessions/start", {
 			method: "POST",
-			body: JSON.stringify({ path: relPath, yolo }),
+			body: JSON.stringify({ path: relPath, yolo, remote }),
 		})
-		toast(`Started ${yolo ? "copilot --yolo" : "copilot"} on ${relPath || "~"}`, "success")
+		const parts = ["copilot"]
+		if (remote) parts.push("--remote")
+		if (yolo) parts.push("--yolo")
+		toast(`Started ${parts.join(" ")} on ${relPath || "~"}`, "success")
 		goto("sessions")
 	}
 	catch (e) {
@@ -177,7 +208,11 @@ function renderSessionItem(s) {
 	const value = document.createElement("div")
 	value.className = "value"
 	const stateText = s.running ? "running" : `stopped${s.exit_code != null ? ` (exit ${s.exit_code})` : ""}`
-	const prefix = s.adopted ? "external · " : (s.yolo ? "yolo · " : "")
+	const flags = []
+	if (s.adopted) flags.push("external")
+	if (s.remote) flags.push("remote")
+	if (s.yolo) flags.push("yolo")
+	const prefix = flags.length ? flags.join(" · ") + " · " : ""
 	value.innerText = `${prefix}${stateText} · pid ${s.pid ?? "-"} · ${formatTime(s.started_at)}`
 	text.appendChild(name)
 	text.appendChild(value)

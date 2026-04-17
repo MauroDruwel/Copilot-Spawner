@@ -190,10 +190,11 @@ def _proc_start_time(pid: int) -> float | None:
 
 
 class Session:
-    def __init__(self, path: Path, yolo: bool, cmd: list[str]):
+    def __init__(self, path: Path, yolo: bool, remote: bool, cmd: list[str]):
         self.id = uuid.uuid4().hex
         self.path = path
         self.yolo = yolo
+        self.remote = remote
         self.cmd = cmd
         self.started_at = time.time()
         self.ended_at: float | None = None
@@ -213,6 +214,7 @@ class Session:
             "id": self.id,
             "path": rel_from_workspace(self.path),
             "yolo": self.yolo,
+            "remote": self.remote,
             "cmd": self.cmd,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
@@ -265,7 +267,7 @@ class SessionManager:
                     parts = [a.decode("utf-8", errors="replace") for a in f.read().split(b"\x00") if a]
             except (OSError, FileNotFoundError):
                 continue
-            if not parts or "--remote" not in parts:
+            if not parts:
                 continue
             # The copilot CLI is often a script, so argv[0] may be the
             # interpreter (node, python, bash). Accept a match anywhere in
@@ -291,6 +293,7 @@ class SessionManager:
                 "id": f"ext-{pid}",
                 "path": rel_or_abs,
                 "yolo": "--yolo" in parts,
+                "remote": "--remote" in parts,
                 "cmd": parts,
                 "started_at": started_at,
                 "ended_at": None,
@@ -303,13 +306,15 @@ class SessionManager:
             })
         return results
 
-    async def start(self, path: Path, yolo: bool, rows: int = 30, cols: int = 100) -> Session:
+    async def start(self, path: Path, yolo: bool, remote: bool = True, rows: int = 30, cols: int = 100) -> Session:
         if not path.is_dir():
             raise web.HTTPBadRequest(reason="Path is not a directory")
-        cmd = [COPILOT_BIN, "--remote"]
+        cmd = [COPILOT_BIN]
+        if remote:
+            cmd.append("--remote")
         if yolo:
             cmd.append("--yolo")
-        session = Session(path=path, yolo=yolo, cmd=cmd)
+        session = Session(path=path, yolo=yolo, remote=remote, cmd=cmd)
 
         try:
             pid, fd = pty.fork()
@@ -544,10 +549,11 @@ async def sessions_start(request: web.Request):
     data = await read_json(request)
     rel = (data.get("path") or "").strip()
     yolo = bool(data.get("yolo"))
+    remote = bool(data.get("remote", True))
     cols = int(data.get("cols") or 100)
     rows = int(data.get("rows") or 30)
     target = resolve_workspace_path(rel)
-    session = await manager.start(target, yolo, rows=rows, cols=cols)
+    session = await manager.start(target, yolo, remote=remote, rows=rows, cols=cols)
     return web.json_response(session.to_dict())
 
 

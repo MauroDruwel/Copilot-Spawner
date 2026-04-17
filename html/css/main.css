@@ -278,6 +278,25 @@ button.primary:hover {
 	background: hsl(0, 75%, 55%);
 	color: hsl(0, 30%, 10%);
 }
+.list .actions i.remote {
+	background: hsl(var(--color), 14%, 14%);
+	color: #8892a7;
+	opacity: .55;
+}
+.list .actions i.remote:hover {
+	background: hsl(var(--color), 14%, 20%);
+	color: #d7e1ef;
+	opacity: 1;
+}
+.list .actions i.remote.on {
+	background: hsl(var(--color), 60%, 22%);
+	color: hsl(var(--color), 95%, 85%);
+	opacity: 1;
+}
+.list .actions i.remote.on:hover {
+	background: hsl(var(--color), 70%, 35%);
+	color: hsl(var(--color), 30%, 10%);
+}
 .list .actions i:active {
 	transform: scale(0.92);
 }
