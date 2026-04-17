@@ -9,6 +9,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 document.addEventListener("DOMContentLoaded", () => {
 	loadBackButtons()
+	loadEscapeShortcut()
 	loadThemePicker()
 	try {
 		let accent = localStorage.getItem("copilotspawner-accent")
@@ -44,6 +45,30 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 	get("main").classList.remove("unloaded")
 })
+
+function loadEscapeShortcut() {
+	document.addEventListener("keydown", (ev) => {
+		if (ev.key !== "Escape" || ev.repeat) return
+		const termModal = get("term-modal")
+		if (termModal && termModal.classList.contains("show")) {
+			ev.preventDefault()
+			closeTerminal()
+			return
+		}
+		const modals = document.querySelectorAll(".modal.show")
+		if (modals.length) {
+			ev.preventDefault()
+			const top = modals[modals.length - 1]
+			if (top && top.id) closeModal(top.id)
+			return
+		}
+		const mainScreen = get("main")
+		if (mainScreen && mainScreen.classList.contains("hidden")) {
+			ev.preventDefault()
+			goBack()
+		}
+	})
+}
 
 function hashchange() {
 	let hash = window.location.hash.slice(1)
