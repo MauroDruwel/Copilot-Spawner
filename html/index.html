@@ -6,15 +6,15 @@
 	<meta name="theme-color" content="#000">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 	<link href="img/icon.png" rel="icon">
-	<link rel="stylesheet" type="text/css" href="css/colors.css">
-	<link rel="stylesheet" type="text/css" href="css/main.css">
-	<link rel="stylesheet" type="text/css" href="css/light.css">
+	<link rel="stylesheet" type="text/css" href="css/colors.css?v=20260417e">
+	<link rel="stylesheet" type="text/css" href="css/main.css?v=20260417e">
+	<link rel="stylesheet" type="text/css" href="css/light.css?v=20260417e">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 	<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js" defer></script>
 	<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js" defer></script>
-	<script type="text/javascript" src="js/utils.js" defer></script>
-	<script type="text/javascript" src="js/app.js" defer></script>
-	<script type="text/javascript" src="js/main.js" defer></script>
+	<script type="text/javascript" src="js/utils.js?v=20260417e" defer></script>
+	<script type="text/javascript" src="js/app.js?v=20260417e" defer></script>
+	<script type="text/javascript" src="js/main.js?v=20260417e" defer></script>
 </head>
 <body>
 	<!-- Main screen -->
@@ -74,7 +74,7 @@
 				<div class="header-actions">
 					<i class="action" onclick="openNewFolder()" title="New folder here">create_new_folder</i>
 					<i class="action" onclick="openClone()" title="Clone a git repository">cloud_download</i>
-					<i class="action" onclick="openContributors()" title="Invite a collaborator">group_add</i>
+					<i class="action" id="explorer-contrib-action" onclick="openContributors()" title="Invite a collaborator">group_add</i>
 					<i class="action" onclick="refreshExplorer()" title="Refresh">refresh</i>
 				</div>
 			</div>
@@ -96,7 +96,11 @@
 			<div class="contents">
 				<div class="search">
 					<i>search</i>
-					<input type="text" id="history-search" placeholder="Search summary, id, path, repo…" oninput="renderHistoryList()" autocomplete="off">
+					<input type="text" id="history-search" placeholder="Search summary, id, path, repo…" autocomplete="off">
+					<label class="search-switch" title="Hide empty sessions from history">
+						<input type="checkbox" id="history-hide-empty" checked>
+						<span>Hide empty</span>
+					</label>
 				</div>
 				<div class="list" id="history-list"></div>
 			</div>
@@ -109,7 +113,7 @@
 			<div class="header">
 				<i class="back"></i>
 				<div class="title">Sessions</div>
-				<i class="action" onclick="refreshSessions()" title="Refresh">refresh</i>
+				<i class="action" onclick="refreshSessions({ force: true })" title="Refresh">refresh</i>
 			</div>
 			<div class="contents">
 				<div class="list" id="sessions-list"></div>
@@ -197,10 +201,6 @@
 						<span class="caption">Folder name</span>
 						<input type="text" id="new-folder-name" placeholder="my-project" autocomplete="off">
 					</label>
-					<label>
-						<span class="caption">Parent (relative to workspace)</span>
-						<input type="text" id="new-folder-parent" placeholder="." value="." autocomplete="off">
-					</label>
 					<div class="actions">
 						<button onclick="closeModal('new-folder-modal')">
 							<i>close</i>
@@ -231,7 +231,7 @@
 						<input type="text" id="clone-url" placeholder="https://github.com/owner/repo.git" autocomplete="off">
 					</label>
 					<label>
-						<span class="caption">Target folder (relative to workspace)</span>
+						<span class="caption">Folder name (optional)</span>
 						<input type="text" id="clone-dir" placeholder="leave empty to use repo name" autocomplete="off">
 					</label>
 					<div class="actions">
@@ -261,7 +261,7 @@
 				<div class="form">
 					<label>
 						<span class="caption">Repository (owner/repo)</span>
-						<input type="text" id="contrib-repo" placeholder="octocat/hello-world" autocomplete="off">
+						<input type="text" id="contrib-repo" placeholder="owner/repo" autocomplete="off" readonly>
 					</label>
 					<label>
 						<span class="caption">GitHub username to add</span>

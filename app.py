@@ -17,6 +17,7 @@ import os
 import pty
 import secrets
 import signal
+import subprocess
 import struct
 import sys
 import termios
@@ -155,6 +156,59 @@ def human_size(n: int) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} PB"
+
+
+def _parse_github_repo(remote_url: str) -> str:
+    """Extract owner/repo from a GitHub remote URL."""
+    s = (remote_url or "").strip()
+    if not s:
+        return ""
+    if s.endswith(".git"):
+        s = s[:-4]
+    s = s.rstrip("/")
+    marker = "github.com/"
+    if marker in s:
+        tail = s.split(marker, 1)[1]
+    elif "github.com:" in s:
+        tail = s.split("github.com:", 1)[1]
+    else:
+        return ""
+    parts = [p for p in tail.split("/") if p]
+    if len(parts) < 2:
+        return ""
+    return f"{parts[0]}/{parts[1]}"
+
+
+def _git_repo_for_path(path: Path) -> str:
+    """Return owner/repo for a path inside a git repo with GitHub origin."""
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if top.returncode != 0:
+        return ""
+    repo_root = top.stdout.strip()
+    if not repo_root:
+        return ""
+    try:
+        origin = subprocess.run(
+            ["git", "-C", repo_root, "config", "--get", "remote.origin.url"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if origin.returncode != 0:
+        return ""
+    return _parse_github_repo(origin.stdout)
 
 
 async def read_json(request: web.Request) -> dict[str, Any]:
@@ -665,18 +719,18 @@ async def list_dir(request: web.Request):
     parent: str | None = None
     if target != WORKSPACE:
         parent = rel_from_workspace(target.parent)
+    current_repo = _git_repo_for_path(target)
     return web.json_response({
         "path": rel_from_workspace(target),
         "parent": parent,
+        "current_repo": current_repo,
         "entries": entries,
     })
 
 
 @routes.get("/api/sessions")
 async def sessions_list(request: web.Request):
-    # Prefer the newest (and running) session for any given pid. Pids get
-    # recycled by the kernel after a session exits, so two Session objects
-    # can legitimately share a pid — but we only want to show one row.
+    # Prefer the newest (and running) session for any given pid.
     managed_sorted = sorted(
         manager.list(),
         key=lambda s: (1 if s.running else 0, s.started_at),
@@ -709,8 +763,32 @@ async def sessions_list(request: web.Request):
             entry["copilot_repository"] = meta.get("repository", "")
             entry["copilot_branch"] = meta.get("branch", "")
         entry.pop("abs_cwd", None)
-    merged.sort(key=lambda s: s.get("started_at") or 0, reverse=True)
-    return web.json_response({"sessions": merged})
+
+    # Final dedupe: prefer copilot_id when present because a single Copilot
+    # session can surface through multiple process rows/PIDs.
+    merged.sort(
+        key=lambda s: (
+            1 if not s.get("adopted") else 0,  # keep managed (PTY-owned) first
+            1 if s.get("running") else 0,
+            s.get("started_at") or 0,
+        ),
+        reverse=True,
+    )
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for entry in merged:
+        copilot_id = str(entry.get("copilot_id") or "").strip()
+        if copilot_id:
+            key = f"copilot:{copilot_id}"
+        elif entry.get("pid"):
+            key = f"pid:{entry['pid']}"
+        else:
+            key = f"id:{entry.get('id')}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(entry)
+    return web.json_response({"sessions": deduped})
 
 
 @routes.get("/api/history")
@@ -788,9 +866,9 @@ async def sessions_stop(request: web.Request):
             await asyncio.sleep(0.1)
         else:
             _kill_pgid(pid, signal.SIGKILL)
-        return web.json_response({"ok": True, "id": sid, "adopted": True, "running": False})
-    session = await manager.stop(sid)
-    return web.json_response(session.to_dict())
+        return web.json_response({"ok": True, "id": sid, "adopted": True, "running": False, "deleted": True})
+    await manager.delete(sid)
+    return web.json_response({"ok": True, "id": sid, "deleted": True})
 
 
 @routes.get("/api/sessions/{sid}/log")
@@ -899,6 +977,10 @@ async def clone_repo(request: web.Request):
     data = await read_json(request)
     url = (data.get("url") or "").strip()
     dir_name = (data.get("dir") or "").strip()
+    rel_parent = (data.get("path") or "").strip()
+    parent = resolve_workspace_path(rel_parent)
+    if not parent.is_dir():
+        raise web.HTTPBadRequest(reason="Target parent is not a directory")
     if not url:
         raise web.HTTPBadRequest(reason="Missing url")
     if not dir_name:
@@ -908,7 +990,7 @@ async def clone_repo(request: web.Request):
         dir_name = base
     if any(ch in dir_name for ch in ("/", "\\", "..")):
         raise web.HTTPBadRequest(reason="Invalid dir name")
-    target = (WORKSPACE / dir_name).resolve()
+    target = (parent / dir_name).resolve()
     try:
         target.relative_to(WORKSPACE)
     except ValueError:
@@ -933,10 +1015,16 @@ async def clone_repo(request: web.Request):
 async def add_contributor(request: web.Request):
     data = await read_json(request)
     repo = (data.get("repo") or "").strip()
+    rel_path = (data.get("path") or "").strip()
     user = (data.get("user") or "").strip()
     perm = (data.get("permission") or "push").strip()
+    if not repo:
+        target = resolve_workspace_path(rel_path)
+        if not target.is_dir():
+            raise web.HTTPBadRequest(reason="Current path is not a directory")
+        repo = _git_repo_for_path(target)
     if not repo or "/" not in repo or not user:
-        raise web.HTTPBadRequest(reason="Provide owner/repo and user")
+        raise web.HTTPBadRequest(reason="Current folder is not a git repo with a GitHub origin")
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         raise web.HTTPBadRequest(reason="GITHUB_TOKEN not set on server")

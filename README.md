@@ -149,7 +149,7 @@ All `/api/*` endpoints require a valid `cs_session` cookie, except `/api/login` 
 | `GET  /api/auth/status` | — | `{authenticated: bool}` |
 | `GET  /api/list?path=<rel>` | — | List folder contents relative to the workspace |
 | `GET  /api/sessions` | — | List all sessions |
-| `POST /api/sessions/start` | `{path, yolo, cols?, rows?}` | Spawn an agent in a folder |
+| `POST /api/sessions/start` | `{path?, resume?, yolo, remote?, cols?, rows?}` | Spawn an agent in a folder, or resume a past Copilot session |
 | `POST /api/sessions/{id}/stop` | — | SIGTERM → SIGKILL the session (and its process group) |
 | `GET  /api/sessions/{id}/log` | — | Plain-text transcript of captured output |
 | `DELETE /api/sessions/{id}` | — | Stop if running, then forget |

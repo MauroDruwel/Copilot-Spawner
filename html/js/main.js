@@ -1,7 +1,6 @@
 window.addEventListener("load", () => {
 	hashchange()
-	refreshSessionsBadge()
-	setInterval(refreshSessionsBadge, 3000)
+	refreshSessionsBadge({ force: true })
 })
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -20,6 +19,29 @@ document.addEventListener("DOMContentLoaded", () => {
 		else selectTheme(!platformIsDark(), false)
 	}
 	catch (e) {}
+	const historySearch = get("history-search")
+	if (historySearch) {
+		historySearch.addEventListener("input", () => {
+			if (typeof window.renderHistoryList === "function") window.renderHistoryList()
+		})
+	}
+	const historyHideEmpty = get("history-hide-empty")
+	if (historyHideEmpty) {
+		try {
+			const raw = localStorage.getItem("copilotspawner-history-hide-empty")
+			historyHideEmpty.checked = raw == null ? true : raw === "true"
+		}
+		catch (e) {
+			historyHideEmpty.checked = true
+		}
+		historyHideEmpty.addEventListener("change", () => {
+			try {
+				localStorage.setItem("copilotspawner-history-hide-empty", String(historyHideEmpty.checked))
+			}
+			catch (e) {}
+			if (typeof window.renderHistoryList === "function") window.renderHistoryList()
+		})
+	}
 	get("main").classList.remove("unloaded")
 })
 
@@ -48,8 +70,9 @@ function goto(target, updateHash = true) {
 		if (toShow == screen) screen.classList.remove("hidden")
 		else screen.classList.add("hidden")
 	}
+	if (target == "main") refreshSessionsBadge({ force: true })
 	if (target == "explorer") refreshExplorer()
-	if (target == "sessions") refreshSessions()
+	if (target == "sessions") refreshSessions({ force: true })
 	if (target == "history") refreshHistory()
 }
 

@@ -1,6 +1,7 @@
 // Copilot Spawner app logic
 
 let currentPath = ""
+let currentRepo = ""
 
 // Per-key remote toggle. Keys are opaque strings (folder rel path, or
 // "history:<id>" for a resume action). Missing key means "on" (the default).
@@ -53,6 +54,9 @@ async function refreshExplorer(relPath = null) {
 	pathEl.innerText = "~/" + (currentPath || "")
 	try {
 		const data = await api("/list?path=" + encodeURIComponent(currentPath))
+		currentRepo = String(data?.current_repo || "")
+		const contribBtn = get("explorer-contrib-action")
+		if (contribBtn) contribBtn.style.display = currentRepo ? "" : "none"
 		const items = []
 		if (data.parent !== null && data.parent !== undefined) {
 			items.push({
@@ -208,19 +212,102 @@ async function resumeHistory(id, yolo) {
 	}
 }
 
-async function refreshSessions() {
+let _sessionsRefreshInFlight = false
+let _sessionsRefreshQueued = false
+let _sessionsRefreshQueuedForce = false
+let _sessionsDataInFlight = null
+let _sessionsDataCache = { sessions: [], at: 0 }
+let _sessionsLastSignature = ""
+let _sessionsEmptyStreak = 0
+let _sessionsHadData = false
+
+function _sessionDedupKey(s) {
+	if (!s || typeof s !== "object") return ""
+	const copilotId = String(s.copilot_id || "").trim()
+	if (copilotId) return "copilot:" + copilotId
+	if (s.pid != null) return "pid:" + s.pid
+	return "id:" + (s.id || "")
+}
+
+function _normalizeSessions(raw) {
+	const items = Array.isArray(raw) ? raw : []
+	const deduped = []
+	const seen = new Set()
+	for (const s of items) {
+		const key = _sessionDedupKey(s)
+		if (!key || seen.has(key)) continue
+		seen.add(key)
+		deduped.push(s)
+	}
+	return deduped
+}
+
+function _sessionsSignature(sessions) {
+	return sessions
+		.map((s) => [
+			_sessionDedupKey(s),
+			s.running ? 1 : 0,
+			s.exit_code ?? "",
+			s.started_at ?? "",
+			s.pid ?? "",
+			s.path ?? "",
+			s.copilot_summary ?? "",
+		].join("|"))
+		.join("||")
+}
+
+async function _getSessionsData({ force = false } = {}) {
+	const now = Date.now()
+	if (_sessionsDataInFlight) return _sessionsDataInFlight
+	if (!force && (now - _sessionsDataCache.at) < 1200) return { sessions: _sessionsDataCache.sessions }
+	const run = api("/sessions").then((data) => {
+		const sessions = _normalizeSessions(data?.sessions)
+		_sessionsDataCache = { sessions, at: Date.now() }
+		return { sessions }
+	}).finally(() => {
+		if (_sessionsDataInFlight === run) _sessionsDataInFlight = null
+	})
+	_sessionsDataInFlight = run
+	return run
+}
+
+async function refreshSessions({ force = false } = {}) {
 	const listEl = get("sessions-list")
-	listEl.innerHTML = ""
+	if (_sessionsRefreshInFlight) {
+		_sessionsRefreshQueued = true
+		_sessionsRefreshQueuedForce = _sessionsRefreshQueuedForce || force
+		return
+	}
+	_sessionsRefreshInFlight = true
 	try {
-		const data = await api("/sessions")
-		if (!data.sessions.length) {
+		const data = await _getSessionsData({ force })
+		const sessions = data.sessions
+		const signature = _sessionsSignature(sessions)
+		if (!sessions.length) {
+			_sessionsEmptyStreak += 1
+			if (_sessionsHadData && _sessionsEmptyStreak < 2) return
+			_sessionsHadData = false
+			_sessionsLastSignature = ""
 			listEl.innerHTML = `<div class="empty"><i>smart_toy</i><div>No sessions yet</div></div>`
 			return
 		}
-		for (const s of data.sessions) listEl.appendChild(renderSessionItem(s))
+		_sessionsEmptyStreak = 0
+		_sessionsHadData = true
+		if (signature === _sessionsLastSignature) return
+		_sessionsLastSignature = signature
+		listEl.replaceChildren(...sessions.map(renderSessionItem))
 	}
 	catch (e) {
-		listEl.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
+		if (!_sessionsLastSignature) listEl.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
+	}
+	finally {
+		_sessionsRefreshInFlight = false
+		if (_sessionsRefreshQueued) {
+			_sessionsRefreshQueued = false
+			const queuedForce = _sessionsRefreshQueuedForce
+			_sessionsRefreshQueuedForce = false
+			refreshSessions({ force: queuedForce })
+		}
 	}
 }
 
@@ -291,8 +378,8 @@ function renderSessionItem(s) {
 async function stopSession(id) {
 	try {
 		await api("/sessions/" + id + "/stop", { method: "POST" })
-		toast("Session stopped", "success")
-		refreshSessions()
+		toast("Session stopped and removed", "success")
+		refreshSessions({ force: true })
 	}
 	catch (e) { toast(e.message, "error") }
 }
@@ -305,9 +392,9 @@ async function deleteSession(id) {
 	catch (e) { toast(e.message, "error") }
 }
 
-async function refreshSessionsBadge() {
+async function refreshSessionsBadge({ force = false } = {}) {
 	try {
-		const data = await api("/sessions")
+		const data = await _getSessionsData({ force })
 		const running = data.sessions.filter(s => s.running).length
 		const total = data.sessions.length
 		const el = get("main-sessions")
@@ -322,14 +409,24 @@ async function refreshSessionsBadge() {
 
 let _historyCache = []
 
+function isHistoryEntryEmpty(h) {
+	const summary = String(h?.summary || "").trim()
+	return !summary
+}
+
+function historyHideEmptyEnabled() {
+	const toggle = get("history-hide-empty")
+	return toggle ? toggle.checked : true
+}
+
 async function refreshHistory() {
 	const listEl = get("history-list")
 	listEl.innerHTML = ""
 	try {
 		const data = await api("/history?limit=200")
-		_historyCache = data.sessions
+		const sessions = Array.isArray(data?.sessions) ? data.sessions : []
+		_historyCache = sessions.filter((h) => h && h.id)
 		renderHistoryList()
-		refreshHistoryBadge(_historyCache.length)
 	}
 	catch (e) {
 		listEl.innerHTML = `<div class="empty"><i>error</i><div>${escapeHtml(e.message)}</div></div>`
@@ -340,19 +437,35 @@ function renderHistoryList() {
 	const listEl = get("history-list")
 	listEl.innerHTML = ""
 	const q = (get("history-search")?.value || "").trim().toLowerCase()
+	const source = Array.isArray(_historyCache) ? _historyCache : []
+	const hideEmpty = historyHideEmptyEnabled()
+	const visibleSource = hideEmpty ? source.filter(h => !isHistoryEntryEmpty(h)) : source
+	refreshHistoryBadge(visibleSource.length)
 	const filtered = q
-		? _historyCache.filter(h => {
-			const hay = [h.id, h.summary, h.cwd, h.repository, h.branch].join(" ").toLowerCase()
+		? visibleSource.filter(h => {
+			const hay = [
+				h?.id ?? "",
+				h?.summary ?? "",
+				h?.cwd ?? "",
+				h?.repository ?? "",
+				h?.branch ?? "",
+			].join(" ").toLowerCase()
 			return hay.includes(q)
 		})
-		: _historyCache
+		: visibleSource
 	if (!filtered.length) {
-		const msg = q ? `No matches for "${escapeHtml(q)}"` : "No past sessions in ~/.copilot"
+		const msg = q
+			? `No matches for "${escapeHtml(q)}"`
+			: (hideEmpty ? "No past sessions with a summary in ~/.copilot" : "No past sessions in ~/.copilot")
 		listEl.innerHTML = `<div class="empty"><i>history_toggle_off</i><div>${msg}</div></div>`
 		return
 	}
-	for (const h of filtered) listEl.appendChild(renderHistoryItem(h))
+	for (const h of filtered) {
+		if (!h || !h.id) continue
+		listEl.appendChild(renderHistoryItem(h))
+	}
 }
+window.renderHistoryList = renderHistoryList
 
 function refreshHistoryBadge(count) {
 	const el = get("main-history")
@@ -362,6 +475,7 @@ function refreshHistoryBadge(count) {
 }
 
 function renderHistoryItem(h) {
+	const sid = String(h?.id || "")
 	const item = document.createElement("div")
 	item.className = "item clickable"
 
@@ -375,7 +489,7 @@ function renderHistoryItem(h) {
 	name.innerText = h.summary || "(no summary)"
 	const value = document.createElement("div")
 	value.className = "value"
-	const bits = [h.id.slice(0, 8)]
+	const bits = [sid.slice(0, 8)]
 	if (h.repository) bits.push(h.repository + (h.branch ? ` @ ${h.branch}` : ""))
 	if (h.cwd) bits.push(h.cwd)
 	if (h.updated_at) bits.push(formatDate(h.updated_at))
@@ -385,8 +499,8 @@ function renderHistoryItem(h) {
 
 	item.appendChild(icon)
 	item.appendChild(text)
-	item.appendChild(renderResumeActions(h.id))
-	item.onclick = () => openHistoryDetail(h.id)
+	item.appendChild(renderResumeActions(sid))
+	item.onclick = () => openHistoryDetail(sid)
 	return item
 }
 
@@ -613,19 +727,17 @@ function closeModal(id) {
 
 function openNewFolder() {
 	get("new-folder-name").value = ""
-	get("new-folder-parent").value = currentPath || "."
 	openModal("new-folder-modal")
 	setTimeout(() => get("new-folder-name").focus(), 50)
 }
 
 async function createFolder() {
 	const name = get("new-folder-name").value.trim()
-	const parent = get("new-folder-parent").value.trim() || "."
 	if (!name) { toast("Enter a folder name", "error"); return }
 	try {
 		await api("/folders", {
 			method: "POST",
-			body: JSON.stringify({ name, parent }),
+			body: JSON.stringify({ name, parent: currentPath || "." }),
 		})
 		toast("Folder created", "success")
 		closeModal("new-folder-modal")
@@ -651,7 +763,7 @@ async function cloneRepo() {
 		toast("Cloning...", "")
 		const data = await api("/clone", {
 			method: "POST",
-			body: JSON.stringify({ url, dir }),
+			body: JSON.stringify({ url, dir, path: currentPath || "." }),
 		})
 		toast("Cloned into " + data.path, "success")
 		closeModal("clone-modal")
@@ -663,26 +775,25 @@ async function cloneRepo() {
 // ---- Contributors ----
 
 function openContributors() {
+	if (!currentRepo) { toast("Current folder is not a git repo with GitHub origin", "error"); return }
 	get("contrib-user").value = ""
+	get("contrib-repo").value = currentRepo
 	openModal("contributors-modal")
 	setTimeout(() => {
-		const repoEl = get("contrib-repo")
-		if (!repoEl.value) repoEl.focus()
-		else get("contrib-user").focus()
+		get("contrib-user").focus()
 	}, 50)
 }
 
 async function addContributor() {
-	const repo = get("contrib-repo").value.trim()
 	const user = get("contrib-user").value.trim()
 	const perm = get("contrib-perm").value
-	if (!repo || !user) { toast("Repo and user are required", "error"); return }
+	if (!user) { toast("Username is required", "error"); return }
 	try {
 		await api("/contributors", {
 			method: "POST",
-			body: JSON.stringify({ repo, user, permission: perm }),
+			body: JSON.stringify({ path: currentPath || ".", user, permission: perm }),
 		})
-		toast(`Invited ${user} to ${repo}`, "success")
+		toast(`Invited ${user} to ${currentRepo}`, "success")
 		closeModal("contributors-modal")
 	}
 	catch (e) { toast(e.message, "error") }
