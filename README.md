@@ -27,7 +27,17 @@ Copilot Spawner gives you a clean web interface to:
 - resume from recent history
 - clone repos, create folders, and invite collaborators
 
-## Quick start
+## Install (recommended: Copilot CLI)
+
+Copy/paste this in Copilot CLI:
+
+```text
+Deploy Copilot Spawner on this Linux machine using https://raw.githubusercontent.com/MauroDruwel/Copilot-Spawner/main/docs/copilot-cli-deploy-prompt.md
+```
+
+The prompt asks setup questions first (including whether to create a user `systemd` service), defaults to stable releases, and supports `uv` or `venv + pip`.
+
+## Manual install
 
 Stable install (latest release tag):
 
@@ -36,17 +46,27 @@ git clone https://github.com/MauroDruwel/Copilot-Spawner.git
 cd Copilot-Spawner
 git fetch --tags
 git checkout "$(git describe --tags --abbrev=0)"
+```
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+### Option A: `uv` (recommended)
+
+```bash
+uv venv .venv
+.venv/bin/uv pip install -r requirements.txt
 
 export COPILOT_SPAWNER_PASSWORD='change-me'
 export COPILOT_SPAWNER_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-python app.py
+.venv/bin/python app.py
 ```
 
-If you want edge updates instead, use `main`.
+### Option B: `.venv` + `pip`
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
 
 Open: <http://127.0.0.1:8765>
 
@@ -55,16 +75,6 @@ Open: <http://127.0.0.1:8765>
 | Main | Explorer | Sessions |
 |---|---|---|
 | ![Main](docs/screenshots/01-main-dark-red.png) | ![Explorer](docs/screenshots/02-explorer-dark-lightblue.png) | ![Sessions](docs/screenshots/03-sessions-dark-green.png) |
-
-## Deploy as a user systemd service
-
-Use this short copy/paste prompt in Copilot CLI:
-
-```text
-Deploy Copilot Spawner on this Linux machine using https://raw.githubusercontent.com/MauroDruwel/Copilot-Spawner/main/docs/copilot-cli-deploy-prompt.md
-```
-
-The linked instructions tell Copilot CLI to ask setup choices first, prefer `uv`, and configure a user `systemctl` service.
 
 ## Configuration
 
