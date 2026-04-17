@@ -738,16 +738,32 @@ async def sessions_list(request: web.Request):
     )
     managed: list[dict[str, Any]] = []
     seen_mgr_pids: set[int] = set()
+    seen_mgr_pgids: set[int] = set()
     for s in managed_sorted:
         if s.pid and s.pid in seen_mgr_pids:
             continue
         if s.pid:
             seen_mgr_pids.add(s.pid)
+            try:
+                seen_mgr_pgids.add(os.getpgid(s.pid))
+            except OSError:
+                pass
         d = dict(s.to_dict(), adopted=False)
         d["abs_cwd"] = str(s.path)
         managed.append(d)
     adopted = manager.discover_external()
-    merged = managed + [a for a in adopted if a["pid"] not in seen_mgr_pids]
+    adopted_filtered: list[dict[str, Any]] = []
+    for a in adopted:
+        pid = a.get("pid")
+        if not pid or pid in seen_mgr_pids:
+            continue
+        try:
+            if os.getpgid(int(pid)) in seen_mgr_pgids:
+                continue
+        except OSError:
+            pass
+        adopted_filtered.append(a)
+    merged = managed + adopted_filtered
     # Attach the matching Copilot session id / summary when available.
     for entry in merged:
         abs_cwd = entry.get("abs_cwd") or ""

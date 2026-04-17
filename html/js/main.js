@@ -62,7 +62,13 @@ function loadBackButtons() {
 }
 
 function goto(target, updateHash = true) {
-	if (updateHash) window.location.hash = target
+	if (updateHash) {
+		const nextHash = "#" + target
+		if (window.location.hash !== nextHash) {
+			window.location.hash = target
+			return
+		}
+	}
 	let toShow = get(target)
 	if (!toShow) return
 	let screens = getClasses("screen")
