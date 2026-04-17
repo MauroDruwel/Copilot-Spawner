@@ -8,7 +8,7 @@ let currentRepo = ""
 const _remoteOverride = new Map()
 
 function isRemoteFor(key) {
-	return _remoteOverride.has(key) ? _remoteOverride.get(key) : true
+	return _remoteOverride.has(key) ? _remoteOverride.get(key) : false
 }
 
 function toggleRemoteFor(key, iconEl) {
@@ -117,6 +117,7 @@ function renderExplorerItem(entry) {
 		actions.className = "actions"
 
 		const key = entry.rel
+		if (!_remoteOverride.has(key)) _remoteOverride.set(key, Boolean(entry.is_git))
 		const isOn = isRemoteFor(key)
 
 		const startBtn = document.createElement("i")
@@ -499,15 +500,16 @@ function renderHistoryItem(h) {
 
 	item.appendChild(icon)
 	item.appendChild(text)
-	item.appendChild(renderResumeActions(sid))
+	item.appendChild(renderResumeActions(sid, Boolean(h?.repository)))
 	item.onclick = () => openHistoryDetail(sid)
 	return item
 }
 
-function renderResumeActions(id) {
+function renderResumeActions(id, defaultRemote = true) {
 	const actions = document.createElement("div")
 	actions.className = "actions"
 	const key = "history:" + id
+	if (!_remoteOverride.has(key)) _remoteOverride.set(key, defaultRemote)
 	const isOn = isRemoteFor(key)
 
 	const resumeBtn = document.createElement("i")
@@ -562,7 +564,7 @@ function renderHistoryDetail(d) {
 	label.className = "history-resume-label"
 	label.innerText = "Resume this session"
 	resumeBar.appendChild(label)
-	resumeBar.appendChild(renderResumeActions(d.id))
+	resumeBar.appendChild(renderResumeActions(d.id, Boolean(d.repository)))
 	body.appendChild(resumeBar)
 
 	const meta = document.createElement("div")
