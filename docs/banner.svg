@@ -22,7 +22,7 @@
 	<circle cx="220" cy="380" r="260" fill="url(#glow)" opacity=".5"/>
 
 	<g transform="translate(80 96)">
-		<text x="0" y="90" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="700" font-size="88" fill="url(#title)" letter-spacing="-2">
+		<text x="0" y="90" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="700" font-size="84" fill="url(#title)" letter-spacing="-2">
 			Copilot Spawner
 		</text>
 		<text x="0" y="150" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="500" font-size="22" fill="#b7c0cf" opacity=".9">
