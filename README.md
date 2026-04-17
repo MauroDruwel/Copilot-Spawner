@@ -29,9 +29,14 @@ Copilot Spawner gives you a clean web interface to:
 
 ## Quick start
 
+Stable install (latest release tag):
+
 ```bash
 git clone https://github.com/MauroDruwel/Copilot-Spawner.git
 cd Copilot-Spawner
+git fetch --tags
+git checkout "$(git describe --tags --abbrev=0)"
+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -40,6 +45,8 @@ export COPILOT_SPAWNER_PASSWORD='change-me'
 export COPILOT_SPAWNER_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 python app.py
 ```
+
+If you want edge updates instead, use `main`.
 
 Open: <http://127.0.0.1:8765>
 
