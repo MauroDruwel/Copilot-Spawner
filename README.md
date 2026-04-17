@@ -49,11 +49,13 @@ Open: <http://127.0.0.1:8765>
 
 ## Deploy as a user systemd service
 
-You can use the copy-paste prompt in:
+Use this short copy/paste prompt in Copilot CLI:
 
-- [`docs/copilot-cli-deploy-prompt.md`](docs/copilot-cli-deploy-prompt.md)
+```text
+Deploy Copilot Spawner on this Linux machine using https://raw.githubusercontent.com/MauroDruwel/Copilot-Spawner/main/docs/copilot-cli-deploy-prompt.md
+```
 
-It tells Copilot CLI to ask a few setup questions first, then install with `uv` (or `venv + pip` fallback), create `.venv`, and configure `systemctl --user`.
+The linked instructions tell Copilot CLI to ask setup choices first, prefer `uv`, and configure a user `systemctl` service.
 
 ## Configuration
 

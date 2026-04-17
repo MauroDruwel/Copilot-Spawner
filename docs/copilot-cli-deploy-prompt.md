@@ -1,31 +1,29 @@
-# Copilot CLI Deployment Prompt
+# Copilot Spawner Deployment Instructions (for Copilot CLI)
 
-Copy this prompt into GitHub Copilot CLI on the target machine:
+Use these instructions when a user asks Copilot CLI to deploy Copilot Spawner on Linux with a user systemd service.
 
----
+## Ask first (required)
 
-You are on a Linux machine. Set up and run **Copilot Spawner** as a **user systemd service** for the current user.
+Before running commands, ask the user:
 
-Before doing anything, ask me these questions and wait for answers:
+1. Install tool: `uv` (recommended) or `venv + pip`
+2. Install path (default: `~/Copilot-Spawner`)
+3. Port (default: `4510`)
+4. Workspace path (default: `$HOME`)
+5. Copilot binary path (default: `$HOME/.local/bin/copilot`)
+6. Keep existing password/secret in service file if present? (recommended: yes)
 
-1. Install tool: `uv` (recommended) or `venv + pip`.
-2. Install location (default: `~/Copilot-Spawner`).
-3. Port (default: `4510`).
-4. Workspace path (default: `%h`).
-5. Copilot binary path (default: `%h/.local/bin/copilot`).
-6. Keep existing password/secret if present? (recommended: yes).
+## Deployment tasks
 
-After I answer, proceed with these requirements:
-
-1. Clone/update the repo at the selected path.
-2. Create and use a Python virtual environment at `<install-path>/.venv`:
-   - If `uv` was selected:
+1. Clone or update repo at chosen install path.
+2. Create `.venv` and install dependencies:
+   - `uv` path:
      - `uv venv <install-path>/.venv`
      - `<install-path>/.venv/bin/uv pip install -r <install-path>/requirements.txt`
-   - If `venv + pip` was selected:
+   - `venv + pip` path:
      - `python3 -m venv <install-path>/.venv`
      - `<install-path>/.venv/bin/pip install -r <install-path>/requirements.txt`
-4. Create `~/.config/systemd/user/copilot-spawner.service` with:
+3. Write `~/.config/systemd/user/copilot-spawner.service`:
    - `WorkingDirectory=<install-path>`
    - `ExecStart=<install-path>/.venv/bin/python <install-path>/app.py`
    - `Restart=always`
@@ -34,24 +32,21 @@ After I answer, proceed with these requirements:
    - `Environment=COPILOT_SPAWNER_PORT=<selected-port>`
    - `Environment=COPILOT_WORKSPACE=<selected-workspace>`
    - `Environment=COPILOT_BIN=<selected-copilot-bin>`
-   - `Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin`
-5. If `COPILOT_SPAWNER_PASSWORD` or `COPILOT_SPAWNER_SECRET` are missing in the service file:
-   - set `COPILOT_SPAWNER_PASSWORD` to a strong generated password
-   - set `COPILOT_SPAWNER_SECRET` to a generated 64-hex string
-6. Run:
+   - `Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin`
+4. Ensure secrets:
+   - If missing, set `COPILOT_SPAWNER_PASSWORD` (strong random)
+   - If missing, set `COPILOT_SPAWNER_SECRET` (64-hex random)
+5. Reload + enable:
    - `systemctl --user daemon-reload`
    - `systemctl --user enable --now copilot-spawner.service`
-7. Print:
-   - service status (`systemctl --user --no-pager --full status copilot-spawner.service`)
-   - listening URL
-   - final service file contents.
+6. Show results:
+   - `systemctl --user --no-pager --full status copilot-spawner.service`
+   - URL (`http://127.0.0.1:<port>`)
+   - final service file content
 
-Constraints:
+## Constraints
 
-- Do not use sudo.
-- Do not modify global system services.
-- Keep all changes in the current user's home directory.
-- If a step fails, explain why and retry with a safe alternative.
-- If `uv` is selected but not installed, ask whether to install it or fall back to `venv + pip`.
-
----
+- Do not use `sudo`.
+- Only create a **user** systemd service (`systemctl --user`).
+- Keep all changes under the user home.
+- If `uv` is chosen but missing, ask whether to install `uv` or switch to `venv + pip`.
