@@ -1,0 +1,423 @@
+const http = require("http");
+const fs = require("fs");
+const fsp = require("fs/promises");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
+const { randomUUID } = require("crypto");
+
+const PORT = Number(process.env.PORT || 4510);
+const BASE_DIR = path.resolve(process.env.COPILOT_BASE_DIR || "/home/codermauro");
+const USER_HOME = os.homedir();
+const COPILOT_BIN = process.env.COPILOT_BIN || "copilot";
+const PUBLIC_DIR = path.join(__dirname, "public");
+const LOG_DIR = path.join(__dirname, "logs");
+
+const sessions = new Map();
+
+function sendJson(res, code, data) {
+  res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(data));
+}
+
+function sendFile(res, filePath, contentType) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
+    });
+    res.end(data);
+  });
+}
+
+function toSafeAbsolute(inputPath = BASE_DIR) {
+  const target = path.resolve(inputPath);
+  if (target !== BASE_DIR && !target.startsWith(`${BASE_DIR}${path.sep}`)) {
+    return null;
+  }
+  return target;
+}
+
+function validateFolderName(name) {
+  if (typeof name !== "string") return "Folder name is required.";
+  const trimmed = name.trim();
+  if (!trimmed) return "Folder name cannot be empty.";
+  if (trimmed === "." || trimmed === "..") return "Folder name cannot be '.' or '..'.";
+  if (trimmed.includes("/") || trimmed.includes("\\")) return "Folder name cannot include path separators.";
+  return null;
+}
+
+function getSpawnPath() {
+  const existingPath = process.env.PATH || "";
+  const localBin = path.join(USER_HOME, ".local", "bin");
+  const segments = existingPath.split(":").filter(Boolean);
+  if (!segments.includes(localBin)) segments.unshift(localBin);
+  return segments.join(":");
+}
+
+async function runCommand(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    let stderr = "";
+    const child = spawn(command, args, { cwd, env: { ...process.env, PATH: getSpawnPath() } });
+    if (child.stderr) {
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString("utf8");
+      });
+    }
+    child.on("error", (error) => reject(error));
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `${command} exited with code ${String(code)}`));
+    });
+  });
+}
+
+async function isGitRepository(directory) {
+  try {
+    const gitEntry = await fsp.stat(path.join(directory, ".git"));
+    return gitEntry.isDirectory() || gitEntry.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function deriveRepoFolderName(repoUrl) {
+  const cleaned = repoUrl.trim().replace(/\/+$/, "");
+  const tail = cleaned.split("/").pop() || "";
+  const noGitSuffix = tail.endsWith(".git") ? tail.slice(0, -4) : tail;
+  return noGitSuffix || "repo";
+}
+
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) return {};
+  return JSON.parse(raw);
+}
+
+async function listDirectories(absoluteDir) {
+  const entries = await fsp.readdir(absoluteDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const absolutePath = path.join(absoluteDir, entry.name);
+      return {
+        name: entry.name,
+        path: absolutePath,
+        relativePath: path.relative(BASE_DIR, absolutePath) || ".",
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function sessionToDto(session) {
+  return {
+    id: session.id,
+    directory: session.directory,
+    command: session.command,
+    args: session.args,
+    yolo: session.yolo,
+    pid: session.pid,
+    status: session.status,
+    createdAt: session.createdAt,
+    endedAt: session.endedAt || null,
+    exitCode: session.exitCode ?? null,
+    signal: session.signal ?? null,
+    logFile: session.logFile,
+  };
+}
+
+async function ensureLogDir() {
+  await fsp.mkdir(LOG_DIR, { recursive: true });
+}
+
+async function readTailLines(filePath, maxLines) {
+  try {
+    const content = await fsp.readFile(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    return lines.slice(-maxLines).join("\n");
+  } catch {
+    return "";
+  }
+}
+
+async function launchSession(directory, yolo) {
+  const args = ["--remote"];
+  if (yolo) args.push("--yolo");
+
+  const id = randomUUID();
+  const logFile = path.join(LOG_DIR, `${id}.log`);
+  const out = fs.createWriteStream(logFile, { flags: "a" });
+  const child = spawn(COPILOT_BIN, args, {
+    cwd: directory,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      PATH: getSpawnPath(),
+    },
+  });
+
+  if (!child.stdout || !child.stderr) {
+    out.end();
+    throw new Error("Failed to initialize session output streams.");
+  }
+  if (!child.pid) {
+    out.end();
+    throw new Error("Failed to launch Copilot process.");
+  }
+  child.stdout.pipe(out);
+  child.stderr.pipe(out);
+  child.unref();
+
+  const session = {
+    id,
+    directory,
+    command: COPILOT_BIN,
+    args,
+    yolo: Boolean(yolo),
+    pid: child.pid,
+    status: "running",
+    createdAt: new Date().toISOString(),
+    endedAt: null,
+    exitCode: null,
+    signal: null,
+    logFile,
+  };
+  sessions.set(id, session);
+
+  child.on("error", (err) => {
+    session.status = "failed";
+    session.endedAt = new Date().toISOString();
+    session.exitCode = -1;
+    session.signal = null;
+    out.write(`\n[spawn-error] ${String(err)}\n`);
+    out.end();
+  });
+  child.on("exit", (code, signal) => {
+    session.status = code === 0 ? "stopped" : "failed";
+    session.endedAt = new Date().toISOString();
+    session.exitCode = code;
+    session.signal = signal;
+    out.write(`\n[exit] code=${String(code)} signal=${String(signal)}\n`);
+    out.end();
+  });
+
+  return session;
+}
+
+async function handler(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    return sendFile(res, path.join(PUBLIC_DIR, "index.html"), "text/html; charset=utf-8");
+  }
+  if (req.method === "GET" && url.pathname === "/styles.css") {
+    return sendFile(res, path.join(PUBLIC_DIR, "styles.css"), "text/css; charset=utf-8");
+  }
+  if (req.method === "GET" && url.pathname === "/app.js") {
+    return sendFile(res, path.join(PUBLIC_DIR, "app.js"), "text/javascript; charset=utf-8");
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/config") {
+    return sendJson(res, 200, { baseDir: BASE_DIR, copilotBin: COPILOT_BIN });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/tree") {
+    const unsafePath = url.searchParams.get("path") || BASE_DIR;
+    const safePath = toSafeAbsolute(unsafePath);
+    if (!safePath) return sendJson(res, 400, { error: "Path is outside allowed root." });
+    try {
+      const dirs = await listDirectories(safePath);
+      const parentPath = safePath === BASE_DIR ? null : path.dirname(safePath);
+      return sendJson(res, 200, {
+        currentPath: safePath,
+        relativePath: path.relative(BASE_DIR, safePath) || ".",
+        parentPath,
+        children: dirs,
+      });
+    } catch (error) {
+      return sendJson(res, 500, { error: `Unable to read directory: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/sessions") {
+    return sendJson(
+      res,
+      200,
+      { sessions: Array.from(sessions.values()).map(sessionToDto).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
+    );
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions") {
+    try {
+      const body = await readBody(req);
+      const safePath = toSafeAbsolute(body.path);
+      if (!safePath) return sendJson(res, 400, { error: "Directory is outside allowed root." });
+
+      const stat = await fsp.stat(safePath);
+      if (!stat.isDirectory()) return sendJson(res, 400, { error: "Target path is not a directory." });
+      const hasGit = await isGitRepository(safePath);
+      if (!hasGit) {
+        return sendJson(res, 400, { error: "Target must be a git repository. Clone a repo first, then deploy." });
+      }
+
+      const session = await launchSession(safePath, Boolean(body.yolo));
+      return sendJson(res, 201, { session: sessionToDto(session) });
+    } catch (error) {
+      return sendJson(res, 500, { error: `Unable to launch session: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/folders") {
+    try {
+      const body = await readBody(req);
+      const parent = toSafeAbsolute(body.parentPath);
+      if (!parent) return sendJson(res, 400, { error: "Parent path is outside allowed root." });
+      const stat = await fsp.stat(parent);
+      if (!stat.isDirectory()) return sendJson(res, 400, { error: "Parent path is not a directory." });
+
+      const nameError = validateFolderName(body.name);
+      if (nameError) return sendJson(res, 400, { error: nameError });
+
+      const createdPath = path.join(parent, body.name.trim());
+      const safeCreatedPath = toSafeAbsolute(createdPath);
+      if (!safeCreatedPath) return sendJson(res, 400, { error: "Resulting path is outside allowed root." });
+
+      await fsp.mkdir(safeCreatedPath);
+      return sendJson(res, 201, {
+        folder: {
+          name: path.basename(safeCreatedPath),
+          path: safeCreatedPath,
+          relativePath: path.relative(BASE_DIR, safeCreatedPath) || ".",
+        },
+      });
+    } catch (error) {
+      if (error && error.code === "EEXIST") return sendJson(res, 409, { error: "Folder already exists." });
+      return sendJson(res, 500, { error: `Unable to create folder: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/clone") {
+    try {
+      const body = await readBody(req);
+      const parent = toSafeAbsolute(body.parentPath);
+      if (!parent) return sendJson(res, 400, { error: "Parent path is outside allowed root." });
+      const parentStat = await fsp.stat(parent);
+      if (!parentStat.isDirectory()) return sendJson(res, 400, { error: "Parent path is not a directory." });
+      if (typeof body.repoUrl !== "string" || !body.repoUrl.trim()) {
+        return sendJson(res, 400, { error: "Repository URL is required." });
+      }
+
+      const targetName = typeof body.folderName === "string" && body.folderName.trim()
+        ? body.folderName.trim()
+        : deriveRepoFolderName(body.repoUrl);
+      const nameError = validateFolderName(targetName);
+      if (nameError) return sendJson(res, 400, { error: nameError });
+
+      const targetPath = toSafeAbsolute(path.join(parent, targetName));
+      if (!targetPath) return sendJson(res, 400, { error: "Clone path is outside allowed root." });
+      try {
+        await fsp.access(targetPath);
+        return sendJson(res, 409, { error: "Target folder already exists." });
+      } catch {
+        // Path is free.
+      }
+
+      await runCommand("git", ["clone", body.repoUrl.trim(), targetPath], parent);
+      return sendJson(res, 201, {
+        folder: {
+          name: path.basename(targetPath),
+          path: targetPath,
+          relativePath: path.relative(BASE_DIR, targetPath) || ".",
+        },
+      });
+    } catch (error) {
+      return sendJson(res, 500, { error: `Unable to clone repository: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/init-repo") {
+    try {
+      const body = await readBody(req);
+      const safePath = toSafeAbsolute(body.path);
+      if (!safePath) return sendJson(res, 400, { error: "Path is outside allowed root." });
+      const stat = await fsp.stat(safePath);
+      if (!stat.isDirectory()) return sendJson(res, 400, { error: "Target path is not a directory." });
+
+      const hasGit = await isGitRepository(safePath);
+      if (hasGit) return sendJson(res, 200, { ok: true, message: "Already a git repository." });
+
+      await runCommand("git", ["init"], safePath);
+      return sendJson(res, 201, { ok: true });
+    } catch (error) {
+      return sendJson(res, 500, { error: `Unable to initialize repository: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/stop")) {
+    const id = url.pathname.slice("/api/sessions/".length, -"/stop".length);
+    const session = sessions.get(id);
+    if (!session) return sendJson(res, 404, { error: "Session not found." });
+    if (session.status !== "running") return sendJson(res, 400, { error: "Session is not running." });
+
+    try {
+      process.kill(session.pid, "SIGTERM");
+      session.status = "stopping";
+      return sendJson(res, 200, { session: sessionToDto(session) });
+    } catch (error) {
+      return sendJson(res, 500, { error: `Unable to stop session: ${String(error.message || error)}` });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/sessions/") && url.pathname.endsWith("/log")) {
+    const id = url.pathname.slice("/api/sessions/".length, -"/log".length);
+    const session = sessions.get(id);
+    if (!session) return sendJson(res, 404, { error: "Session not found." });
+    const tail = Number(url.searchParams.get("tail") || 300);
+    const safeTail = Number.isFinite(tail) ? Math.max(20, Math.min(2000, tail)) : 300;
+    const output = await readTailLines(session.logFile, safeTail);
+    return sendJson(res, 200, { output });
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/sessions/")) {
+    const id = url.pathname.slice("/api/sessions/".length);
+    const session = sessions.get(id);
+    if (!session) return sendJson(res, 404, { error: "Session not found." });
+    if (session.status === "running" || session.status === "stopping") {
+      return sendJson(res, 400, { error: "Stop the session before removing it." });
+    }
+    sessions.delete(id);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify({ error: "Not found." }));
+}
+
+async function start() {
+  await ensureLogDir();
+  const server = http.createServer((req, res) => {
+    handler(req, res).catch((error) => {
+      sendJson(res, 500, { error: `Unexpected error: ${String(error.message || error)}` });
+    });
+  });
+  server.listen(PORT, () => {
+    process.stdout.write(`Copilot Spawner running on http://localhost:${PORT}\n`);
+    process.stdout.write(`Allowed root: ${BASE_DIR}\n`);
+    process.stdout.write(`Copilot binary: ${COPILOT_BIN}\n`);
+  });
+}
+
+start().catch((err) => {
+  process.stderr.write(`${String(err)}\n`);
+  process.exit(1);
+});

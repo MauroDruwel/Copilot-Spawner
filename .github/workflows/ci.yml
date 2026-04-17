@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Python syntax & import check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile all Python files
+        run: python -m compileall -q app.py
+
+      - name: Import the app module
+        env:
+          COPILOT_SPAWNER_PASSWORD: ci-test
+          COPILOT_SPAWNER_SECRET: ci-test-secret
+        run: python -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('app', 'app.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('app module imported OK')"
+
+  frontend:
+    name: Frontend static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify HTML / CSS / JS files exist
+        run: |
+          test -f html/index.html
+          test -f html/login.html
+          test -f html/css/main.css
+          test -f html/js/app.js
+          test -f html/js/login.js
+          test -f html/js/main.js
+          test -f html/js/utils.js
+
+      - name: Basic JS syntax check with node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: |
+          node --check html/js/app.js
+          node --check html/js/login.js
+          node --check html/js/main.js
+          node --check html/js/utils.js

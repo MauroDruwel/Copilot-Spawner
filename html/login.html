@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Copilot Spawner — Sign in</title>
+	<meta charset="utf-8">
+	<meta name="theme-color" content="#000">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+	<link href="img/icon.png" rel="icon">
+	<link rel="stylesheet" type="text/css" href="css/colors.css">
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<link rel="stylesheet" type="text/css" href="css/light.css">
+	<script type="text/javascript" src="js/login.js"></script>
+</head>
+<body class="lightblue">
+	<div class="screen" id="main">
+		<div class="wrapper">
+			<div class="title-main"><div>Copilot</div></div>
+			<div class="center titlebar">
+				<div class="value">Sign in to continue</div>
+			</div>
+			<div class="contents">
+				<form class="form" id="login-form" autocomplete="off">
+					<label>
+						<span class="caption">Password</span>
+						<input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required>
+					</label>
+					<div class="actions">
+						<button type="submit" class="primary">
+							<i>login</i>
+							<p>Sign in</p>
+						</button>
+					</div>
+					<div id="login-error" class="empty" style="color:#e88; display:none; padding: 4px 8px;"></div>
+				</form>
+			</div>
+		</div>
+	</div>
+</body>
+</html>

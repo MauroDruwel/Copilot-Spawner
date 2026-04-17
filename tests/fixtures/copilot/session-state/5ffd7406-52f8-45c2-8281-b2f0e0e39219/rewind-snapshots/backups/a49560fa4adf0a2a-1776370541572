@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#040508">
+  <title>Copilot Spawner</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="red">
+<main class="screen">
+  <div class="wrapper">
+    <header class="hero">
+      <h1>Copilot Spawner</h1>
+      <p>Status-style control center for repo sessions.</p>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Theme</h2>
+      </div>
+      <div class="center">
+        <div class="themes">
+          <div class="theme light selected" id="theme-light">
+            <div class="preview">
+              <div class="box"></div>
+              <div class="box"></div>
+            </div>
+          </div>
+          <div class="theme dark" id="theme-dark">
+            <div class="preview">
+              <div class="box"></div>
+              <div class="box"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="center">
+        <div class="accents">
+          <i class="red"></i>
+          <i class="orange"></i>
+          <i class="yellow"></i>
+          <i class="green"></i>
+          <i class="lightblue"></i>
+          <i class="blue"></i>
+          <i class="purple"></i>
+          <i class="pink"></i>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Explorer</h2>
+        <button id="up-btn" class="ghost">Up</button>
+      </div>
+      <div id="path-label" class="path-pill">...</div>
+      <div class="action-row">
+        <button id="deploy-here-btn">Deploy Here</button>
+        <label class="toggle">
+          <input type="checkbox" id="deploy-here-yolo">
+          <span>--yolo</span>
+        </label>
+        <button id="init-repo-btn" class="ghost">Init Git Here</button>
+      </div>
+      <div class="action-row">
+        <input id="new-folder-name" type="text" placeholder="new-folder-name">
+        <button id="create-folder-btn">Create Folder</button>
+      </div>
+      <div class="action-row">
+        <input id="clone-repo-url" type="text" placeholder="https://github.com/owner/repo.git">
+        <input id="clone-folder-name" type="text" placeholder="optional-folder-name">
+        <button id="clone-repo-btn">Clone Repo</button>
+      </div>
+      <div id="flash" class="flash"></div>
+      <div id="dir-list" class="list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Sessions</h2>
+        <button id="refresh-btn" class="ghost">Refresh</button>
+      </div>
+      <div id="session-list" class="list"></div>
+    </section>
+  </div>
+</main>
+  <script src="/app.js"></script>
+</body>
+</html>

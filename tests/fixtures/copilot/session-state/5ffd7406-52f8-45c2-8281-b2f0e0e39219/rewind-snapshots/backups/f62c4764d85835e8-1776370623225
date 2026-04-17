@@ -1,0 +1,365 @@
+const state = {
+  baseDir: "",
+  currentPath: "",
+  parentPath: null,
+  openLogSessionId: null,
+  openLogContent: "",
+};
+
+const els = {
+  dirList: document.getElementById("dir-list"),
+  sessionList: document.getElementById("session-list"),
+  pathLabel: document.getElementById("path-label"),
+  upBtn: document.getElementById("up-btn"),
+  deployHereBtn: document.getElementById("deploy-here-btn"),
+  deployHereYolo: document.getElementById("deploy-here-yolo"),
+  initRepoBtn: document.getElementById("init-repo-btn"),
+  createFolderBtn: document.getElementById("create-folder-btn"),
+  newFolderName: document.getElementById("new-folder-name"),
+  cloneRepoUrl: document.getElementById("clone-repo-url"),
+  cloneFolderName: document.getElementById("clone-folder-name"),
+  cloneRepoBtn: document.getElementById("clone-repo-btn"),
+  flash: document.getElementById("flash"),
+  refreshBtn: document.getElementById("refresh-btn"),
+  accents: document.querySelector(".accents"),
+  themeLight: document.getElementById("theme-light"),
+  themeDark: document.getElementById("theme-dark"),
+};
+
+async function request(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed.");
+  return data;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setFlash(message, type = "ok") {
+  if (!els.flash) {
+    console.warn("[ui] flash element missing:", message);
+    return;
+  }
+  els.flash.classList.remove("ok", "error");
+  els.flash.classList.add(type);
+  els.flash.textContent = message;
+}
+
+function selectAccent(accent, save = true) {
+  if (!els.accents) return;
+  const cleanAccent = String(accent || "").replace("selected", "").trim();
+  const available = Array.from(els.accents.children);
+  for (const color of available) {
+    const colorName = color.className.replace("selected", "").trim();
+    if (colorName === cleanAccent) {
+      color.classList.add("selected");
+      document.body.classList.add(cleanAccent);
+    } else {
+      color.classList.remove("selected");
+      if (colorName) document.body.classList.remove(colorName);
+    }
+  }
+  if (!save) return;
+  localStorage.setItem("statusapp-accent", cleanAccent);
+}
+
+function selectTheme(isLight, save = true) {
+  if (isLight) document.body.classList.add("light");
+  else document.body.classList.remove("light");
+  els.themeLight?.classList.toggle("selected", isLight);
+  els.themeDark?.classList.toggle("selected", !isLight);
+  if (!save) return;
+  localStorage.setItem("statusapp-light", String(Boolean(isLight)));
+}
+
+function loadThemePicker() {
+  if (!els.accents) return;
+  for (const accent of els.accents.children) {
+    accent.addEventListener("click", () => {
+      selectAccent(accent.className);
+    });
+  }
+  els.themeLight?.addEventListener("click", () => selectTheme(true));
+  els.themeDark?.addEventListener("click", () => selectTheme(false));
+}
+
+async function loadConfig() {
+  const data = await request("/api/config");
+  state.baseDir = data.baseDir;
+}
+
+async function loadDirectory(path) {
+  const url = new URL("/api/tree", window.location.origin);
+  if (path) url.searchParams.set("path", path);
+  const data = await request(url.toString());
+  state.currentPath = data.currentPath;
+  state.parentPath = data.parentPath;
+  els.pathLabel.textContent = data.currentPath;
+  els.upBtn.disabled = !data.parentPath;
+
+  els.dirList.innerHTML = data.children.length
+    ? data.children.map((dir) => {
+        const escapedPath = escapeHtml(dir.path);
+        const escapedName = escapeHtml(dir.name);
+        const escapedRel = escapeHtml(dir.relativePath);
+        return `
+          <div class="item">
+            <div>
+              <div class="name">${escapedName}</div>
+              <div class="meta">${escapedRel}</div>
+            </div>
+            <div class="right">
+              <button data-open="${escapedPath}">Open</button>
+              <div class="inline-actions">
+                <button data-launch="${escapedPath}">Deploy</button>
+                <label class="toggle">
+                  <input type="checkbox" data-item-yolo>
+                  <span>--yolo</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("")
+    : `<div class="item"><div><div class="name">This folder is empty</div><div class="meta">Use Deploy Here, Create Folder, Clone Repo, or Init Git Here.</div></div></div>`;
+}
+
+function renderSessionLog(sessionId) {
+  if (state.openLogSessionId !== sessionId) return "";
+  return `<pre class="session-log">${escapeHtml(state.openLogContent || "(no output yet)")}</pre>`;
+}
+
+async function loadSessions() {
+  const data = await request("/api/sessions");
+  els.sessionList.innerHTML = data.sessions.length
+    ? data.sessions.map((session) => {
+        const escapedId = escapeHtml(session.id);
+        const escapedDir = escapeHtml(session.directory);
+        const escapedArgs = escapeHtml(session.args.join(" "));
+        const outputButton = state.openLogSessionId === session.id ? "Hide Output" : "Show Output";
+        return `
+          <div class="item">
+            <div style="flex:1;">
+              <div class="name">${escapedDir}</div>
+              <div class="meta">PID ${session.pid} · ${session.command} ${escapedArgs}</div>
+              <div class="badge status-${session.status}">${escapeHtml(session.status)}</div>
+              ${renderSessionLog(session.id)}
+            </div>
+            <div class="right">
+              <button data-output="${escapedId}">${outputButton}</button>
+              <button data-stop="${escapedId}">Stop</button>
+              <button data-remove="${escapedId}">Remove</button>
+            </div>
+          </div>
+        `;
+      }).join("")
+    : `<div class="item"><div class="meta">No sessions yet.</div></div>`;
+}
+
+async function createSession(dirPath, yolo) {
+  await request("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: dirPath, yolo: Boolean(yolo) }),
+  });
+  await loadSessions();
+  setFlash(`Session launched in ${dirPath}`, "ok");
+}
+
+async function stopSession(id) {
+  await request(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST" });
+  await loadSessions();
+}
+
+async function removeSession(id) {
+  await request(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (state.openLogSessionId === id) {
+    state.openLogSessionId = null;
+    state.openLogContent = "";
+  }
+  await loadSessions();
+}
+
+async function createFolder() {
+  const folderName = els.newFolderName.value.trim();
+  if (!folderName) throw new Error("Folder name is required.");
+  await request("/api/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parentPath: state.currentPath, name: folderName }),
+  });
+  els.newFolderName.value = "";
+  await loadDirectory(state.currentPath);
+  setFlash(`Created folder: ${folderName}`, "ok");
+}
+
+async function cloneRepo() {
+  const repoUrl = els.cloneRepoUrl.value.trim();
+  const folderName = els.cloneFolderName.value.trim();
+  if (!repoUrl) throw new Error("Repository URL is required.");
+  await request("/api/clone", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      parentPath: state.currentPath,
+      repoUrl,
+      folderName: folderName || undefined,
+    }),
+  });
+  els.cloneFolderName.value = "";
+  await loadDirectory(state.currentPath);
+  setFlash("Repository cloned.", "ok");
+}
+
+async function initRepoHere() {
+  await request("/api/init-repo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: state.currentPath }),
+  });
+  setFlash("Initialized git repository.", "ok");
+}
+
+async function toggleOutput(id) {
+  if (state.openLogSessionId === id) {
+    state.openLogSessionId = null;
+    state.openLogContent = "";
+    await loadSessions();
+    return;
+  }
+  const data = await request(`/api/sessions/${encodeURIComponent(id)}/log?tail=400`);
+  state.openLogSessionId = id;
+  state.openLogContent = data.output || "";
+  await loadSessions();
+}
+
+function bindEvents() {
+  if (
+    !els.upBtn || !els.refreshBtn || !els.initRepoBtn || !els.deployHereBtn
+    || !els.createFolderBtn || !els.cloneRepoBtn || !els.dirList || !els.sessionList
+  ) {
+    throw new Error("UI failed to initialize: required elements are missing.");
+  }
+
+  els.upBtn.addEventListener("click", async () => {
+    if (!state.parentPath) return;
+    await loadDirectory(state.parentPath);
+  });
+
+  els.refreshBtn.addEventListener("click", loadSessions);
+
+  els.initRepoBtn.addEventListener("click", async () => {
+    try {
+      await initRepoHere();
+    } catch (error) {
+      setFlash(error.message, "error");
+    }
+  });
+
+  els.deployHereBtn.addEventListener("click", async () => {
+    try {
+      await createSession(state.currentPath, els.deployHereYolo.checked);
+    } catch (error) {
+      setFlash(error.message, "error");
+    }
+  });
+
+  els.createFolderBtn.addEventListener("click", async () => {
+    try {
+      await createFolder();
+    } catch (error) {
+      setFlash(error.message, "error");
+    }
+  });
+
+  els.cloneRepoBtn.addEventListener("click", async () => {
+    try {
+      await cloneRepo();
+    } catch (error) {
+      setFlash(error.message, "error");
+    }
+  });
+
+  els.dirList.addEventListener("click", async (event) => {
+    const openBtn = event.target.closest("button[data-open]");
+    if (openBtn) {
+      await loadDirectory(openBtn.dataset.open);
+      return;
+    }
+
+    const launchBtn = event.target.closest("button[data-launch]");
+    if (launchBtn) {
+      try {
+        const item = launchBtn.closest(".item");
+        const yoloChecked = Boolean(item && item.querySelector("input[data-item-yolo]")?.checked);
+        await createSession(launchBtn.dataset.launch, yoloChecked);
+      } catch (error) {
+        setFlash(error.message, "error");
+      }
+    }
+  });
+
+  els.sessionList.addEventListener("click", async (event) => {
+    const outputBtn = event.target.closest("button[data-output]");
+    if (outputBtn) {
+      try {
+        await toggleOutput(outputBtn.dataset.output);
+      } catch (error) {
+        setFlash(error.message, "error");
+      }
+      return;
+    }
+
+    const stopBtn = event.target.closest("button[data-stop]");
+    if (stopBtn) {
+      try {
+        await stopSession(stopBtn.dataset.stop);
+        setFlash("Session stop requested.", "ok");
+      } catch (error) {
+        setFlash(error.message, "error");
+      }
+      return;
+    }
+
+    const removeBtn = event.target.closest("button[data-remove]");
+    if (removeBtn) {
+      try {
+        await removeSession(removeBtn.dataset.remove);
+        setFlash("Session removed.", "ok");
+      } catch (error) {
+        setFlash(error.message, "error");
+      }
+    }
+  });
+}
+
+async function init() {
+  try {
+    loadThemePicker();
+    const savedAccent = localStorage.getItem("statusapp-accent");
+    selectAccent(savedAccent || "red", false);
+    const savedTheme = localStorage.getItem("statusapp-light");
+    selectTheme(savedTheme === "true", false);
+
+    await loadConfig();
+    await loadDirectory(state.baseDir);
+    await loadSessions();
+    setFlash("Ready.", "ok");
+    bindEvents();
+    setInterval(loadSessions, 3000);
+  } catch (error) {
+    setFlash(error.message, "error");
+    if (els.dirList) {
+      els.dirList.innerHTML = `<div class="item"><div class="meta">${escapeHtml(error.message)}</div></div>`;
+    }
+  }
+}
+
+init();

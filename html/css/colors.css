@@ -1,0 +1,24 @@
+.red {
+    --color: 0;
+}
+.orange {
+    --color: 24;
+}
+.yellow {
+    --color: 45;
+}
+.green {
+    --color: 90;
+}
+.lightblue {
+    --color: 210;
+}
+.blue {
+    --color: 240;
+}
+.purple {
+    --color: 270;
+}
+.pink {
+    --color: 320;
+}
