@@ -22,13 +22,13 @@
 	<circle cx="220" cy="380" r="260" fill="url(#glow)" opacity=".5"/>
 
 	<g transform="translate(80 96)">
-		<text x="0" y="90" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="700" font-size="84" fill="url(#title)" letter-spacing="-2">
+		<text x="0" y="90" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="700" font-size="88" fill="url(#title)" letter-spacing="-2">
 			Copilot Spawner
 		</text>
-		<text x="0" y="150" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="500" font-size="22" fill="#b7c0cf" opacity=".9">
+		<text x="0" y="150" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="500" font-size="20" fill="#b7c0cf" opacity=".9">
 			A tiny, beautiful web app to spawn &amp; manage GitHub Copilot agents.
 		</text>
-		<text x="0" y="190" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="500" font-size="18" fill="#8892a7">
+		<text x="0" y="190" font-family="'Quicksand', 'Segoe UI', system-ui, sans-serif" font-weight="500" font-size="17" fill="#8892a7">
 			Folder explorer · PTY terminal · clone · contributors · 8 accents · light &amp; dark
 		</text>
 
