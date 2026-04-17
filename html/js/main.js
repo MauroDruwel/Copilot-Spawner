@@ -47,8 +47,9 @@ document.addEventListener("DOMContentLoaded", () => {
 })
 
 function loadEscapeShortcut() {
-	document.addEventListener("keydown", (ev) => {
-		if (ev.key !== "Escape" || ev.repeat) return
+	window.addEventListener("keydown", (ev) => {
+		const isEsc = ev.key === "Escape" || ev.key === "Esc" || ev.code === "Escape" || ev.keyCode === 27
+		if (!isEsc || ev.repeat) return
 		const termModal = get("term-modal")
 		if (termModal && termModal.classList.contains("show")) {
 			ev.preventDefault()
@@ -67,7 +68,7 @@ function loadEscapeShortcut() {
 			ev.preventDefault()
 			goBack()
 		}
-	})
+	}, true)
 }
 
 function hashchange() {
