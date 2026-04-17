@@ -12,6 +12,8 @@
 	<a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white"></a>
 	<a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-4c1"></a>
 	<a href="https://github.com/aio-libs/aiohttp"><img alt="aiohttp" src="https://img.shields.io/badge/aiohttp-%E2%89%A53.9-2C5BB4"></a>
+	<a href="https://github.com/MauroDruwel/Copilot-Spawner/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MauroDruwel/Copilot-Spawner/actions/workflows/ci.yml/badge.svg"></a>
+	<a href="https://github.com/MauroDruwel/Copilot-Spawner/actions/workflows/release.yml"><img alt="Release" src="https://github.com/MauroDruwel/Copilot-Spawner/actions/workflows/release.yml/badge.svg"></a>
 </p>
 
 ## What it does
@@ -68,6 +70,12 @@ The linked instructions tell Copilot CLI to ask setup choices first, prefer `uv`
 | `COPILOT_WORKSPACE` | `./workspace` | Explorer root |
 | `COPILOT_BIN` | `copilot` | Copilot CLI binary path |
 | `GITHUB_TOKEN` | unset | Needed for collaborator invites |
+
+## Releases
+
+- Tags use `vX.Y.Z` format (example: `v0.1.0`).
+- Pushing a version tag triggers the Release workflow automatically.
+- You can also trigger release manually via **Actions → Release** with a version input.
 
 ## Security notes
 
