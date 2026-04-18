@@ -16,7 +16,7 @@ cd Copilot-Spawner
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-export COPILOT_SPAWNER_PASSWORD='dev'
+export COPILOT_SPAWNER_PASSWORD='change-me'
 python app.py
 ```
 
