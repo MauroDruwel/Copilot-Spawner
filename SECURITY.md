@@ -11,7 +11,7 @@ Copilot Spawner is a small single-maintainer project. Only the latest `main` rec
 Instead, use one of the following private channels:
 
 - GitHub's private vulnerability reporting: <https://github.com/MauroDruwel/Copilot-Spawner/security/advisories/new>
-- Email: `security@druwel.dev` (PGP optional; reply will be plaintext unless you include a key)
+- Email: `security@maurodruwel.be` (PGP optional; reply will be plaintext unless you include a key)
 
 Include, where possible:
 
