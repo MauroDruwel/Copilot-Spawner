@@ -224,10 +224,10 @@ let _sessionsHadData = false
 
 function _sessionDedupKey(s) {
 	if (!s || typeof s !== "object") return ""
-	const copilotId = String(s.copilot_id || "").trim()
-	if (copilotId) return "copilot:" + copilotId
 	if (s.pid != null) return "pid:" + s.pid
-	return "id:" + (s.id || "")
+	const sid = String(s.id || "").trim()
+	if (sid) return "id:" + sid
+	return ""
 }
 
 function _normalizeSessions(raw) {
@@ -236,7 +236,11 @@ function _normalizeSessions(raw) {
 	const seen = new Set()
 	for (const s of items) {
 		const key = _sessionDedupKey(s)
-		if (!key || seen.has(key)) continue
+		if (!key) {
+			deduped.push(s)
+			continue
+		}
+		if (seen.has(key)) continue
 		seen.add(key)
 		deduped.push(s)
 	}
