@@ -70,11 +70,21 @@ python app.py
 
 Open: <http://127.0.0.1:8765>
 
+## Demo
+
+- Video walkthrough: [copilot-spawner-demo.webm](docs/demo/copilot-spawner-demo.webm)
+
 ## Screenshots
 
-| Main | Explorer | Sessions |
-|---|---|---|
-| ![Main](docs/screenshots/01-main-dark-red.png) | ![Explorer](docs/screenshots/02-explorer-dark-lightblue.png) | ![Sessions](docs/screenshots/03-sessions-dark-green.png) |
+<p>
+	<img src="docs/screenshots/01-main-dark-red.png" alt="Main screen" width="100%">
+</p>
+<p>
+	<img src="docs/screenshots/02-explorer-dark-lightblue.png" alt="Explorer screen" width="100%">
+</p>
+<p>
+	<img src="docs/screenshots/03-sessions-dark-green.png" alt="Sessions screen" width="100%">
+</p>
 
 ## Configuration
 
