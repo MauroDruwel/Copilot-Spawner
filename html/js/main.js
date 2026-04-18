@@ -7,6 +7,37 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 	if (!localStorage.getItem("copilotspawner-light")) selectTheme(!platformIsDark(), false)
 })
 
+const TAB_META = {
+	main: { title: "Copilot Spawner", icon: "🤖" },
+	explorer: { title: "Explorer — Copilot Spawner", icon: "📁" },
+	sessions: { title: "Sessions — Copilot Spawner", icon: "💻" },
+	history: { title: "History — Copilot Spawner", icon: "🕘" },
+	theme: { title: "Theme — Copilot Spawner", icon: "🎨" },
+}
+
+function _tabMeta(target) {
+	return TAB_META[target] || TAB_META.main
+}
+
+function _faviconSvg(icon) {
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="#111827"/><text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle" font-size="34">${icon}</text></svg>`
+	return "data:image/svg+xml," + encodeURIComponent(svg)
+}
+
+function setTabMeta(target) {
+	const meta = _tabMeta(target)
+	document.title = meta.title
+	let icon = get("app-favicon") || document.querySelector("link[rel='icon']")
+	if (!icon) {
+		icon = document.createElement("link")
+		icon.id = "app-favicon"
+		icon.rel = "icon"
+		document.head.appendChild(icon)
+	}
+	icon.type = "image/svg+xml"
+	icon.href = _faviconSvg(meta.icon)
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	loadBackButtons()
 	loadEscapeShortcut()
@@ -102,6 +133,7 @@ function goto(target, updateHash = true) {
 		if (toShow == screen) screen.classList.remove("hidden")
 		else screen.classList.add("hidden")
 	}
+	setTabMeta(target)
 	if (target == "main") refreshSessionsBadge({ force: true })
 	if (target == "explorer") refreshExplorer()
 	if (target == "sessions") refreshSessions({ force: true })
