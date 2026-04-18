@@ -46,7 +46,7 @@ workspace/         # user-created folders, git clones, etc.
 1. **Open an issue first** for anything non-trivial — it's much faster than writing a PR that doesn't fit.
 2. Work on a feature branch: `git checkout -b feat/short-name`.
 3. Keep commits focused. A good commit message looks like `server: limit session log to configured max bytes` — subject in imperative mood, details in the body if needed.
-4. Test end to end in a browser. There is no test suite yet; adding one is a great first PR.
+4. Test end to end in a browser. CI already runs basic Python/JS checks; a focused automated integration test suite would still be a great first PR.
 5. Open the PR against `main` with a clear description: what, why, and how you tested.
 
 ## Things that are always welcome
@@ -65,7 +65,7 @@ workspace/         # user-created folders, git clones, etc.
 
 ## Releasing
 
-Tags follow semver: `v0.1.0`, `v0.2.0`, …. The project has no automated release pipeline yet — cutting a release means tagging the commit and writing release notes on GitHub.
+Tags follow semver: `v0.1.0`, `v0.2.0`, …. Pushing a `v*.*.*` tag runs the Release workflow, which validates the project and publishes a GitHub Release with generated notes.
 
 ## Code of conduct
 
