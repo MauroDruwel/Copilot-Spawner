@@ -780,8 +780,8 @@ async def sessions_list(request: web.Request):
             entry["copilot_branch"] = meta.get("branch", "")
         entry.pop("abs_cwd", None)
 
-    # Final dedupe: prefer copilot_id when present because a single Copilot
-    # session can surface through multiple process rows/PIDs.
+    # Final dedupe: keep distinct processes/sessions, then use copilot_id only
+    # as a last-resort fallback key.
     merged.sort(
         key=lambda s: (
             1 if not s.get("adopted") else 0,  # keep managed (PTY-owned) first
@@ -793,13 +793,14 @@ async def sessions_list(request: web.Request):
     deduped: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for entry in merged:
-        copilot_id = str(entry.get("copilot_id") or "").strip()
-        if copilot_id:
-            key = f"copilot:{copilot_id}"
-        elif entry.get("pid"):
+        if entry.get("pid"):
             key = f"pid:{entry['pid']}"
+        elif entry.get("id"):
+            key = f"id:{entry['id']}"
+        elif str(entry.get("copilot_id") or "").strip():
+            key = f"copilot:{entry['copilot_id']}"
         else:
-            key = f"id:{entry.get('id')}"
+            key = "unknown"
         if key in seen_keys:
             continue
         seen_keys.add(key)
