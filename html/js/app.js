@@ -227,8 +227,6 @@ function _sessionDedupKey(s) {
 	if (s.pid != null) return "pid:" + s.pid
 	const sid = String(s.id || "").trim()
 	if (sid) return "id:" + sid
-	const copilotId = String(s.copilot_id || "").trim()
-	if (copilotId) return "copilot:" + copilotId
 	return ""
 }
 
@@ -238,7 +236,11 @@ function _normalizeSessions(raw) {
 	const seen = new Set()
 	for (const s of items) {
 		const key = _sessionDedupKey(s)
-		if (!key || seen.has(key)) continue
+		if (!key) {
+			deduped.push(s)
+			continue
+		}
+		if (seen.has(key)) continue
 		seen.add(key)
 		deduped.push(s)
 	}
