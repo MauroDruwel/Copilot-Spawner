@@ -70,6 +70,10 @@ python app.py
 
 Open: <http://127.0.0.1:8765>
 
+## Demo
+
+- Video walkthrough: [copilot-spawner-demo.webm](docs/demo/copilot-spawner-demo.webm)
+
 ## Screenshots
 
 <p>
