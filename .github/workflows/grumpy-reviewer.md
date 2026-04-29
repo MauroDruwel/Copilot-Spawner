@@ -14,7 +14,7 @@ engine:
   id: copilot
   env:
     GITHUB_COPILOT_BASE_URL: "https://openrouter.ai/api/v1"
-    COPILOT_MODEL: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'anthropic/claude-3.5-sonnet' }}
+    COPILOT_MODEL: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
 
 network:
   allowed:
