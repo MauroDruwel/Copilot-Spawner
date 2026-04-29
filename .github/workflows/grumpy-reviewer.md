@@ -10,6 +10,9 @@ permissions:
   contents: read
   pull-requests: read
 
+secrets:
+  COPILOT_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
 engine:
   id: copilot
   env:
