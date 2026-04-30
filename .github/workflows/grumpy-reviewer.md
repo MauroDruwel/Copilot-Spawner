@@ -17,7 +17,6 @@ engine:
     COPILOT_PROVIDER_TYPE: "openai"
     COPILOT_PROVIDER_WIRE_MODEL: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
     COPILOT_PROVIDER_MODEL_ID: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
-    COPILOT_PROVIDER_API_KEY: $COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
   
 
 network:
