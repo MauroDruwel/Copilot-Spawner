@@ -14,6 +14,7 @@ engine:
   id: copilot
   env:
     COPILOT_PROVIDER_BASE_URL: "https://openrouter.ai/api/v1"
+    COPILOT_PROVIDER_API_KEY: ${{ vars.OPENROUTER_API_KEY }}
     COPILOT_PROVIDER_TYPE: "openai"
     COPILOT_PROVIDER_WIRE_MODEL: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
     COPILOT_PROVIDER_MODEL_ID: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
