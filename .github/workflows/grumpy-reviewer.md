@@ -13,7 +13,9 @@ permissions:
 
 engine:
   id: copilot
+  model: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
   env:
+    GITHUB_COPILOT_BASE_URL: "https://openrouter.ai/api/v1"
     COPILOT_PROVIDER_BASE_URL: "https://openrouter.ai/api/v1"
     COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     COPILOT_PROVIDER_TYPE: "openai"
