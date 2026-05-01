@@ -1,6 +1,6 @@
 ---
 description: Performs critical code review with a focus on edge cases, potential bugs, and code quality issues
-
+strict: false
 on:
   slash_command:
     name: grumpy
@@ -13,18 +13,18 @@ permissions:
 engine:
   id: copilot
   env:
-    COPILOT_PROVIDER_BASE_URL: "https://openrouter.ai/api/v1"
-    COPILOT_PROVIDER_TYPE: "openai"
-    COPILOT_PROVIDER_WIRE_MODEL: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
-    COPILOT_PROVIDER_MODEL_ID: ${{ vars.GH_AW_MODEL_AGENT_COPILOT || 'minimax/minimax-m2.5:free' }}
-
-secrets:
-  COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    # REQUIRED — Activates BYOK mode (without this, uses GitHub Copilot routing)
+    COPILOT_PROVIDER_BASE_URL: ${{ vars.PROVIDER_BASE_URL }}
+ 
+    # REQUIRED — A model must be specified (via this, --model, or COPILOT_PROVIDER_MODEL_ID)
+    COPILOT_MODEL: ${{ vars.PROVIDER_MODEL }}
+ 
+    # OPTIONAL — Not needed for local providers (Ollama, vLLM); required for cloud APIs
+    COPILOT_PROVIDER_API_KEY: ${{ secrets.PROVIDER_API_KEY }}
 
 network:
   allowed:
     - defaults
-    - openrouter.ai
 
 tools:
   cache-memory: true
