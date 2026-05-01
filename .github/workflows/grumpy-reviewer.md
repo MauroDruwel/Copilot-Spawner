@@ -1,6 +1,6 @@
 ---
 description: Performs critical code review with a focus on edge cases, potential bugs, and code quality issues
-strict: false
+
 on:
   slash_command:
     name: grumpy
