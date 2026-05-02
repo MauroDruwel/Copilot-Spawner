@@ -18,9 +18,6 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
       - name: Install gh-aw extension
-        uses: github/gh-aw-actions/setup-cli@239aec45b78c8799417efdd5bc6d8cc036629ec1 # v0.71.1
-        with:
-          version: v0.71.1
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/github/gh-aw/refs/heads/main/install-gh-aw.sh | bash
