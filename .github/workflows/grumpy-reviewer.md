@@ -25,6 +25,7 @@ engine:
 network:
   allowed:
     - defaults
+    - openrouter.ai
 
 tools:
   cache-memory: true
