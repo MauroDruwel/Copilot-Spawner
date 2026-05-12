@@ -621,6 +621,30 @@ let termResizeObs = null
 let termOnDataDisposable = null
 let currentTermId = null
 
+async function copyTextToClipboard(text) {
+	if (!text) return false
+	try {
+		await navigator.clipboard.writeText(text)
+		return true
+	}
+	catch (e) {}
+	try {
+		const ta = document.createElement("textarea")
+		ta.value = text
+		ta.setAttribute("readonly", "")
+		ta.style.position = "fixed"
+		ta.style.opacity = "0"
+		document.body.appendChild(ta)
+		ta.select()
+		const ok = document.execCommand("copy")
+		document.body.removeChild(ta)
+		return ok
+	}
+	catch (e) {
+		return false
+	}
+}
+
 function ensureTerm() {
 	if (term) return term
 	const body = get("term-body")
@@ -640,6 +664,22 @@ function ensureTerm() {
 	})
 	fitAddon = new FitAddon.FitAddon()
 	term.loadAddon(fitAddon)
+	term.attachCustomKeyEventHandler((ev) => {
+		const key = String(ev.key || "").toLowerCase()
+		const copyChord = (ev.ctrlKey || ev.metaKey) && !ev.shiftKey && key === "c"
+		const copyShiftChord = ev.ctrlKey && ev.shiftKey && key === "c"
+		if ((copyChord || copyShiftChord) && term && term.hasSelection()) {
+			const text = term.getSelection()
+			copyTextToClipboard(text).then((ok) => {
+				if (!ok) return
+				try { term.clearSelection() } catch {}
+				toast("Copied terminal selection", "success")
+			})
+			ev.preventDefault()
+			return false
+		}
+		return true
+	})
 	term.open(body)
 	// Exposed for end-to-end tests that need to trigger input programmatically.
 	window.__term = term

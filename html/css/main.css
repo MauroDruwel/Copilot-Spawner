@@ -718,6 +718,12 @@ button.primary:hover {
 }
 .term-body .xterm {
 	height: 100% !important;
+	user-select: text;
+	-webkit-user-select: text;
+}
+.term-body .xterm * {
+	user-select: text;
+	-webkit-user-select: text;
 }
 .term-body .xterm-viewport {
 	background: transparent !important;
